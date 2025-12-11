@@ -26,3 +26,5 @@ pytest
 dvc[s3]
 flake8
 grafana-client
+pandas
+numpy
