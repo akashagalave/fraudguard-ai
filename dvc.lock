@@ -1,0 +1,26 @@
+schema: '2.0'
+stages:
+  data_ingestion:
+    cmd: python src/data/data_ingestion.py
+    deps:
+    - path: data/external/fraudTest.csv
+      hash: md5
+      md5: 692357a2589a1a6fcd44f14b3e1f9d2c
+      size: 150354339
+    - path: data/external/fraudTrain.csv
+      hash: md5
+      md5: 9723893e5492dc0551036edcf596e284
+      size: 351238196
+    - path: src/data/data_ingestion.py
+      hash: md5
+      md5: f14413d3d9f29ff8fd43eaaf70516cde
+      size: 2505
+    outs:
+    - path: data/raw/test.csv
+      hash: md5
+      md5: 0ee3c86fa2fb88e77c1a7f780fa2bd60
+      size: 148954728
+    - path: data/raw/train.csv
+      hash: md5
+      md5: 3f43d5a6aab3b5d0b5bc2676e3626496
+      size: 347981313
