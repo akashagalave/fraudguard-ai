@@ -1,0 +1,28 @@
+# local package
+-e .
+
+# external requirements
+click
+Sphinx
+coverage
+flake8
+scikit-learn
+optuna 
+xgboost
+lightgbm
+matplotlib
+seaborn
+redis
+python-dotenv
+shap
+fastapi
+uvicorn
+prometheus-fastapi-instrumentator
+mlflow
+dagshub
+plotly
+streamlit
+pytest
+dvc[s3]
+flake8
+grafana-client
