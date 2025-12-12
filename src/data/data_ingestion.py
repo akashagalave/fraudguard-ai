@@ -38,11 +38,10 @@ def load_external_data(train_path: Path, test_path: Path):
 
 
 def minimal_clean(df: pd.DataFrame) -> pd.DataFrame:
-  
+     
     before = df.shape[0]
     df = df.drop_duplicates()
     after = df.shape[0]
-
     logger.debug(f"Removed {before - after} duplicate rows.")
     return df
 
@@ -55,7 +54,6 @@ def save_raw(train_df: pd.DataFrame, test_df: pd.DataFrame, raw_dir: Path):
         test_df.to_csv(raw_dir / "test.csv", index=False)
 
         logger.debug(f"Saved raw train & test to: {raw_dir}")
-
     except Exception as e:
         logger.error(f"Error saving raw data: {e}")
         raise
@@ -73,17 +71,14 @@ def main():
         logger.debug(f"External train path: {external_train}")
         logger.debug(f"External test path: {external_test}")
 
-
         train_df, test_df = load_external_data(external_train, external_test)
 
         train_df = minimal_clean(train_df)
         test_df = minimal_clean(test_df)
-
        
         save_raw(train_df, test_df, raw_dir)
 
         logger.debug("Data ingestion completed successfully!")
-
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         print(f"Error: {e}")
