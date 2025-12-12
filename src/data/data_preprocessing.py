@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import logging
 from pathlib import Path
 
@@ -37,12 +38,15 @@ def drop_pii(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def process_dates(df: pd.DataFrame) -> pd.DataFrame:
-    df["trans_date_trans_time"] = pd.to_datetime(df["trans_date_trans_time"])
-    df["dob"] = pd.to_datetime(df["dob"])
+    df["trans_date_trans_time"] = pd.to_datetime(df["trans_date_trans_time"], errors="coerce")
+    df["dob"] = pd.to_datetime(df["dob"], errors="coerce")
+
+    df = df.dropna(subset=["trans_date_trans_time", "dob"])
+
+  
+    df["age"] = (df["trans_date_trans_time"] - df["dob"]).dt.days // 365
 
     
-    df["age"] = df["trans_date_trans_time"].dt.year - df["dob"].dt.year
-
     df["hour"] = df["trans_date_trans_time"].dt.hour
     df["day_of_week"] = df["trans_date_trans_time"].dt.dayofweek
     df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
@@ -52,15 +56,14 @@ def process_dates(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-
 def clean_geo(df: pd.DataFrame) -> pd.DataFrame:
     before = df.shape[0]
 
     df = df[
-        df["lat"].between(-90, 90) &
-        df["long"].between(-180, 180) &
-        df["merch_lat"].between(-90, 90) &
-        df["merch_long"].between(-180, 180)
+        df["lat"].between(-90, 90)
+        & df["long"].between(-180, 180)
+        & df["merch_lat"].between(-90, 90)
+        & df["merch_long"].between(-180, 180)
     ]
 
     removed = before - df.shape[0]
@@ -69,11 +72,23 @@ def clean_geo(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def basic_clean(df: pd.DataFrame) -> pd.DataFrame:
+
+def smart_clean(df: pd.DataFrame) -> pd.DataFrame:
+
+    
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col].fillna(df[col].mode()[0], inplace=True)
+
+    
+    for col in df.select_dtypes(include=[np.number]).columns:
+        df[col].fillna(df[col].median(), inplace=True)
+
+    
     before = df.shape[0]
-    df = df.dropna().drop_duplicates()
+    df = df.drop_duplicates()
     removed = before - df.shape[0]
-    logger.info(f"Missing/Duplicate rows removed: {removed}")
+
+    logger.info(f"Missing values imputed & duplicates removed: {removed}")
     return df
 
 
@@ -83,11 +98,11 @@ def save_data(df: pd.DataFrame, path: Path):
     logger.info(f"Saved cleaned file → {path}")
 
 
+
 if __name__ == "__main__":
 
     ROOT = Path(__file__).parent.parent.parent
 
- 
     raw_train = ROOT / "data" / "raw" / "train.csv"
     raw_test  = ROOT / "data" / "raw" / "test.csv"
 
@@ -97,22 +112,21 @@ if __name__ == "__main__":
     out_train = interim_dir / "train_cleaned.csv"
     out_test = interim_dir / "test_cleaned.csv"
 
-
     train_df = load_data(raw_train)
     test_df = load_data(raw_test)
 
-    logger.info("Processing TRAIN Dataset ")
+    logger.info("Processing TRAIN Dataset")
     train_df = drop_pii(train_df)
     train_df = process_dates(train_df)
     train_df = clean_geo(train_df)
-    train_df = basic_clean(train_df)
+    train_df = smart_clean(train_df)
     save_data(train_df, out_train)
 
     logger.info("Processing TEST Dataset")
     test_df = drop_pii(test_df)
     test_df = process_dates(test_df)
     test_df = clean_geo(test_df)
-    test_df = basic_clean(test_df)
+    test_df = smart_clean(test_df)
     save_data(test_df, out_test)
 
-    logger.info("DATA PREPROCESSING COMPLETED")
+    logger.info(" DATA PREPROCESSING COMPLETED SUCCESSFULLY")
