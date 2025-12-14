@@ -106,8 +106,8 @@ stages:
       size: 1520
     - path: reports/shap/shap_summary.png
       hash: md5
-      md5: f76529f48bc5f8514fc608dfef935cab
-      size: 104407
+      md5: 68bfacc7edb2983997415177f94dbba2
+      size: 104700
     - path: reports/shap/shap_summary_bar.png
       hash: md5
       md5: cd8007c32ce9de972422901efe7822ad
