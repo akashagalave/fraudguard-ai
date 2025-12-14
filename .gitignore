@@ -19,6 +19,16 @@ lib64/
 parts/
 sdist/
 var/
+reports/shap/
+models/
+models/
+reports/shap/
+__pycache__/
+*.pkl
+*.joblib
+*.log
+.dvc/cache/
+
 *.egg-info/
 .installed.cfg
 *.egg
