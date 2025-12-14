@@ -76,3 +76,39 @@ stages:
       hash: md5
       md5: 1c2e32537116761afec82c76d7d61b4d
       size: 791891583
+  model_building:
+    cmd: python src/model/model_building.py
+    deps:
+    - path: data/processed/train_features_v1.csv
+      hash: md5
+      md5: 1c2e32537116761afec82c76d7d61b4d
+      size: 791891583
+    - path: src/model/model_building.py
+      hash: md5
+      md5: 74f20b913ff071fbad49409626c73c84
+      size: 4806
+    outs:
+    - path: models/fraudguard_lightgbm/categorical_cols.json
+      hash: md5
+      md5: df47538071427c6b9b19b23c6a062314
+      size: 115
+    - path: models/fraudguard_lightgbm/feature_columns.json
+      hash: md5
+      md5: 9d435e5a94f847990b766e84d6d0205d
+      size: 873
+    - path: models/fraudguard_lightgbm/model.pkl
+      hash: md5
+      md5: e8013ba0319bd60ab3891f954c60267e
+      size: 96378900
+    - path: reports/shap/shap_global_importance.csv
+      hash: md5
+      md5: 7819d3f18869adc78d87425cb96f98d7
+      size: 1520
+    - path: reports/shap/shap_summary.png
+      hash: md5
+      md5: f76529f48bc5f8514fc608dfef935cab
+      size: 104407
+    - path: reports/shap/shap_summary_bar.png
+      hash: md5
+      md5: cd8007c32ce9de972422901efe7822ad
+      size: 44556
