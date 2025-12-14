@@ -29,3 +29,19 @@ stages:
     outs:
       - data/processed/train_features_v1.csv
       - data/processed/test_features_v1.csv
+
+  model_building:
+    cmd: python src/model/model_building.py
+    deps:
+      - src/model/model_building.py
+      - data/processed/train_features_v1.csv
+    outs:
+      - reports/shap/shap_global_importance.csv
+      - reports/shap/shap_summary.png
+      - reports/shap/shap_summary_bar.png
+      - models/fraudguard_lightgbm/model.pkl:
+          cache: false
+      - models/fraudguard_lightgbm/feature_columns.json:
+          cache: false
+      - models/fraudguard_lightgbm/categorical_cols.json:
+          cache: false

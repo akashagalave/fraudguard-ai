@@ -1,0 +1,9 @@
+[
+  "merchant",
+  "category",
+  "gender",
+  "job",
+  "trans_num",
+  "hour_bucket",
+  "day_of_week_bucket"
+]
