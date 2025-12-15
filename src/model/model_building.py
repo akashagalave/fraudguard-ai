@@ -128,7 +128,7 @@ with mlflow.start_run(run_name="LightGBM_Final_Training"):
     logger.info(f"ROC-AUC: {roc_auc:.6f}")
     logger.info(f"PR-AUC : {pr_auc:.6f}")
 
-    mlflow.sklearn.log_model(
+    mlflow.lightgbm.log_model(
         model,
         artifact_path="model",
         registered_model_name="fraudguard_lightgbm"
