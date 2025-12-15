@@ -85,30 +85,59 @@ stages:
       size: 791891583
     - path: src/model/model_building.py
       hash: md5
-      md5: 74f20b913ff071fbad49409626c73c84
-      size: 4806
+      md5: e93beda5af6b19eba9fce153c347d987
+      size: 2882
     outs:
-    - path: models/fraudguard_lightgbm/categorical_cols.json
+    - path: models/fraudguard_lightgbm
       hash: md5
-      md5: df47538071427c6b9b19b23c6a062314
-      size: 115
-    - path: models/fraudguard_lightgbm/feature_columns.json
-      hash: md5
-      md5: 9d435e5a94f847990b766e84d6d0205d
-      size: 873
-    - path: models/fraudguard_lightgbm/model.pkl
-      hash: md5
-      md5: e8013ba0319bd60ab3891f954c60267e
-      size: 96378900
+      md5: 2520da57de69062cd843229c19867c8c.dir
+      size: 96380255
+      nfiles: 3
     - path: reports/shap/shap_global_importance.csv
       hash: md5
-      md5: 7819d3f18869adc78d87425cb96f98d7
-      size: 1520
+      md5: 0d0c8d1979d11e92b48e3d553018366e
+      size: 1537
     - path: reports/shap/shap_summary.png
       hash: md5
-      md5: 68bfacc7edb2983997415177f94dbba2
-      size: 104700
+      md5: 96319d0ba8502346b1ca5811bf6d8721
+      size: 113785
     - path: reports/shap/shap_summary_bar.png
       hash: md5
-      md5: cd8007c32ce9de972422901efe7822ad
-      size: 44556
+      md5: f0b2326ca3f203ce62ad7fdb3157b95c
+      size: 43088
+  model_evaluation:
+    cmd: python src/model/model_evaluation.py
+    deps:
+    - path: data/processed/test_features_v1.csv
+      hash: md5
+      md5: a2c32c5b83ce22eb79c35b8eb4ad7915
+      size: 338290428
+    - path: models/fraudguard_lightgbm
+      hash: md5
+      md5: 2520da57de69062cd843229c19867c8c.dir
+      size: 96380255
+      nfiles: 3
+    - path: src/model/model_evaluation.py
+      hash: md5
+      md5: f15e5e2591f61921519b6aa267aebe95
+      size: 2204
+    outs:
+    - path: reports/evaluation/metrics.json
+      hash: md5
+      md5: 6e9145495fbfce02ea0aa28d2f9455d3
+      size: 70
+    - path: run_information.json
+      hash: md5
+      md5: 4b39495bb1eeb2140ec9d9000026dac2
+      size: 155
+  model_registry:
+    cmd: python src/model/model_registry.py
+    deps:
+    - path: run_information.json
+      hash: md5
+      md5: 4b39495bb1eeb2140ec9d9000026dac2
+      size: 155
+    - path: src/model/model_registry.py
+      hash: md5
+      md5: a215f7a9c2d220ab611aebe1bd1b909d
+      size: 775

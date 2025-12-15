@@ -23,7 +23,6 @@ stages:
     cmd: python src/features/run_feature_engineering.py
     deps:
       - src/features/run_feature_engineering.py
-      - src/features/feature_engineering.py
       - data/interim/train_cleaned.csv
       - data/interim/test_cleaned.csv
     outs:
@@ -36,12 +35,24 @@ stages:
       - src/model/model_building.py
       - data/processed/train_features_v1.csv
     outs:
+      - models/fraudguard_lightgbm:
+          cache: false
       - reports/shap/shap_global_importance.csv
       - reports/shap/shap_summary.png
       - reports/shap/shap_summary_bar.png
-      - models/fraudguard_lightgbm/model.pkl:
-          cache: false
-      - models/fraudguard_lightgbm/feature_columns.json:
-          cache: false
-      - models/fraudguard_lightgbm/categorical_cols.json:
-          cache: false
+
+  model_evaluation:
+    cmd: python src/model/model_evaluation.py
+    deps:
+      - src/model/model_evaluation.py
+      - data/processed/test_features_v1.csv
+      - models/fraudguard_lightgbm
+    outs:
+      - reports/evaluation/metrics.json
+      - run_information.json
+
+  model_registry:
+    cmd: python src/model/model_registry.py
+    deps:
+      - src/model/model_registry.py
+      - run_information.json
