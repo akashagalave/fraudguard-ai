@@ -1,60 +1,69 @@
+import hashlib
+import json
 import logging
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 
-from src.serving.schemas import (
-    PredictionRequest,
-    PredictionResponse,
-)
+from src.serving.schemas import PredictionRequest, PredictionResponse
 from src.serving.model_loader import load_artifacts
-from src.serving.config import FRAUD_THRESHOLD
+from src.serving.redis_client import get_from_cache, set_to_cache
+from src.serving.config import FRAUD_THRESHOLD, REDIS_TTL_SECONDS
 
-logger = logging.getLogger("fraudguard_api")
+logger = logging.getLogger("api")
 logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
 
-app = FastAPI(
-    title="FraudGuard AI",
-    version="1.0.0",
-    description="Production-grade fraud detection API"
-)
+app = FastAPI(title="FraudGuard AI", version="1.0.0")
+
+model, feature_columns, categorical_cols = load_artifacts()
 
 
-logger.info("Loading model from MLflow Registry")
+def build_cache_key(features: dict) -> str:
+    serialized = json.dumps(features, sort_keys=True)
+    return "fraud_pred:" + hashlib.sha256(serialized.encode()).hexdigest()
 
-model, FEATURE_COLUMNS, CATEGORICAL_COLS = load_artifacts()
-
-logger.info("Model loaded successfully")
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+
 @app.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest):
     try:
-        row = {col: None for col in FEATURE_COLUMNS}
+        cache_key = build_cache_key(request.features)
 
-        for key, value in request.features.items():
-            if key in row:
-                row[key] = value
+        cached = get_from_cache(cache_key)
+        if cached:
+            logger.info("Cache HIT")
+            return cached
+
+        logger.info("Cache MISS")
+
+        row = {col: None for col in feature_columns}
+        for k, v in request.features.items():
+            if k in row:
+                row[k] = v
 
         df = pd.DataFrame([row])
 
-        for col in CATEGORICAL_COLS:
+        for col in categorical_cols:
             df[col] = df[col].astype("category")
 
-        numeric_cols = [c for c in FEATURE_COLUMNS if c not in CATEGORICAL_COLS]
+        numeric_cols = [c for c in feature_columns if c not in categorical_cols]
         df[numeric_cols] = df[numeric_cols].fillna(0)
 
         prob = float(model.predict_proba(df)[0][1])
         is_fraud = prob >= FRAUD_THRESHOLD
 
-        return PredictionResponse(
-            fraud_probability=round(prob, 6),
-            is_fraud=bool(prob >= FRAUD_THRESHOLD),
-            top_reasons=None
-        )
+        response = {
+            "fraud_probability": round(prob, 6),
+            "is_fraud": bool(is_fraud),
+            "top_reasons": None
+        }
+
+        set_to_cache(cache_key, response, REDIS_TTL_SECONDS)
+
+        return response
 
     except Exception as e:
         logger.exception("Prediction failed")
