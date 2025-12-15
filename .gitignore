@@ -22,6 +22,7 @@ var/
 reports/shap/
 models/
 models/
+models/
 reports/shap/
 __pycache__/
 *.pkl
