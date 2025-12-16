@@ -18,6 +18,9 @@ model, feature_columns, categorical_cols = load_artifacts()
 
 
 def build_cache_key(features: dict) -> str:
+    """
+    Deterministic Redis cache key
+    """
     serialized = json.dumps(features, sort_keys=True)
     return "fraud_pred:" + hashlib.sha256(serialized.encode()).hexdigest()
 
@@ -31,13 +34,9 @@ def health():
 def predict(request: PredictionRequest):
     try:
         cache_key = build_cache_key(request.features)
-
         cached = get_from_cache(cache_key)
         if cached:
-            logger.info("Cache HIT")
             return cached
-
-        logger.info("Cache MISS")
 
         row = {col: None for col in feature_columns}
         for k, v in request.features.items():
@@ -58,7 +57,7 @@ def predict(request: PredictionRequest):
         response = {
             "fraud_probability": round(prob, 6),
             "is_fraud": bool(is_fraud),
-            "top_reasons": None
+            "top_reasons": None  
         }
 
         set_to_cache(cache_key, response, REDIS_TTL_SECONDS)

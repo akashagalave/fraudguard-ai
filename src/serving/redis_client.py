@@ -28,8 +28,10 @@ def get_from_cache(key: str) -> Optional[dict]:
 
     value = redis_client.get(key)
     if value:
+        logger.info("CACHE HIT")
         return json.loads(value)
 
+    logger.info("CACHE MISS")
     return None
 
 
