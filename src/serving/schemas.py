@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional
 
 
 class PredictionRequest(BaseModel):
+    transaction_id: str
     features: Dict[str, Any]
 
 
@@ -15,3 +16,4 @@ class PredictionResponse(BaseModel):
     fraud_probability: float
     is_fraud: bool
     top_reasons: Optional[List[ShapReason]] = None
+    human_explanations: Optional[List[str]] = None
