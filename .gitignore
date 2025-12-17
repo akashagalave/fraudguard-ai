@@ -29,7 +29,7 @@ __pycache__/
 *.joblib
 *.log
 .dvc/cache/
-
+.env
 *.egg-info/
 .installed.cfg
 *.egg
