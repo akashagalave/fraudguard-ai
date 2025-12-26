@@ -13,7 +13,7 @@ MODEL_NAME = "fraudguard_lightgbm"
 MODEL_STAGE = "Production"
 
 
-FRAUD_THRESHOLD = 0.00000001
+FRAUD_THRESHOLD = 0.10
 
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
