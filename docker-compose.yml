@@ -1,0 +1,18 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: fraudguard-redis
+    restart: unless-stopped
+
+  fastapi:
+    image: fraudguard-fastapi:latest
+    container_name: fraudguard-fastapi
+    ports:
+      - "8000:8000"
+    environment:
+      DAGSHUB_USER_TOKEN: ${DAGSHUB_USER_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - redis
+    restart: unless-stopped
