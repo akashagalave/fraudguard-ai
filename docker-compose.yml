@@ -1,4 +1,32 @@
 services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: fraudguard-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: fraudguard-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # 👇 IMPORTANT FIX
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    restart: unless-stopped
+
   redis:
     image: redis:alpine
     container_name: fraudguard-redis
@@ -13,6 +41,10 @@ services:
       DAGSHUB_USER_TOKEN: ${DAGSHUB_USER_TOKEN}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+
+      # FastAPI talks to Kafka INSIDE docker
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     depends_on:
       - redis
+      - kafka
     restart: unless-stopped
