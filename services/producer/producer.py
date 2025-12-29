@@ -7,8 +7,7 @@ from kafka import KafkaProducer
 KAFKA_BROKER = "localhost:9092"
 TOPIC = "transactions"
 
-TOTAL_EVENTS = 10_000          
-SLEEP_SECONDS = 0.01           
+SLEEP_SECONDS = 0.01  
 
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BROKER,
@@ -36,18 +35,10 @@ def generate_transaction():
     }
 
 if __name__ == "__main__":
-    print(f" Kafka Producer started | streaming {TOTAL_EVENTS} events")
+    print("Kafka Producer started | streaming transactions continuously")
 
-    for i in range(1, TOTAL_EVENTS + 1):
+    while True:
         event = generate_transaction()
         producer.send(TOPIC, value=event)
-
-        if i % 500 == 0:
-            print(f" Sent {i}/{TOTAL_EVENTS} events")
-
         time.sleep(SLEEP_SECONDS)
 
-    producer.flush()
-    producer.close()
-
-    print(" Finished streaming 10k events successfully")
