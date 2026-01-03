@@ -3,42 +3,50 @@ import json
 import logging
 import pandas as pd
 import shap
+import numpy as np
+import joblib
 
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
+from pathlib import Path
 
 from src.serving.schemas import PredictionRequest, PredictionResponse
 from src.serving.model_loader import load_model_assets
 from src.serving.redis_client import init_redis, get_from_cache, set_to_cache
 from src.serving.config import FRAUD_THRESHOLD, REDIS_TTL_SECONDS
-from src.serving.shap_utils import (
-    generate_shap_bar_chart,
-    generate_human_explanations
-)
+from src.features.feature_engineering import build_features
+from src.serving.shap_utils import generate_shap_bar_chart, generate_human_explanations
 from src.serving.email_service import send_fraud_email
 
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
 app = FastAPI(title="FraudGuard AI", version="1.0.0")
 
 model = None
-explainer = None
 feature_columns = None
-categorical_cols = None
+artifacts = {}
+explainer = None
 
 
 @app.on_event("startup")
 async def startup_event():
-    global model, explainer, feature_columns, categorical_cols
+    global model, feature_columns, artifacts, explainer
 
-    model, feature_columns, categorical_cols = load_model_assets()
+    model, feature_columns, _ = load_model_assets()
+
+    artifact_path = Path("models/fraudguard_lightgbm/artifacts.pkl")
+    artifacts = joblib.load(artifact_path) if artifact_path.exists() else {}
+
     explainer = shap.TreeExplainer(model)
 
-    await init_redis()
-    logger.info("App startup completed")
+    try:
+        await init_redis()
+    except Exception:
+        logger.warning("Redis not available – running without cache")
+
+    logger.info("🚀 App startup completed")
 
 
 def build_prediction_cache_key(features: dict) -> str:
@@ -57,77 +65,67 @@ async def predict(request: PredictionRequest):
         alert_key = build_alert_cache_key(request.transaction_id)
 
         shap_img = None
-        cached = await get_from_cache(pred_key)
 
+        cached = await get_from_cache(pred_key)
         if cached:
-            logger.info("Prediction Cache HIT")
             response = cached
         else:
-            logger.info("Prediction Cache MISS")
+            raw_df = pd.DataFrame([request.features])
 
-            row = {col: None for col in feature_columns}
-            for k, v in request.features.items():
-                if k in row:
-                    row[k] = v
+            engineered_df, _ = build_features(
+                raw_df,
+                mode="test",
+                artifacts=artifacts
+            )
 
-            df = pd.DataFrame([row])
+            row = {}
+            for col in feature_columns:
+                val = engineered_df[col].iloc[0] if col in engineered_df else 0
+                row[col] = val if isinstance(val, (int, float, np.number)) else 0
 
-            for col in categorical_cols:
-                df[col] = df[col].astype("category")
+            df_final = pd.DataFrame([row])
+            df_final = df_final.apply(pd.to_numeric, errors="coerce").fillna(0)
+            df_final = df_final[feature_columns]
 
-            numeric_cols = [c for c in feature_columns if c not in categorical_cols]
-            df[numeric_cols] = df[numeric_cols].fillna(0)
-
-            prob = float(model.predict_proba(df)[0][1])
+            prob = float(model.predict_proba(df_final)[0][1])
             is_fraud = prob >= FRAUD_THRESHOLD
 
             response = {
                 "fraud_probability": round(prob, 6),
+                "risk_scores": int(prob * 100),
                 "is_fraud": bool(is_fraud),
                 "top_reasons": [],
                 "human_explanations": []
             }
 
             if is_fraud:
-                shap_img, shap_pairs = generate_shap_bar_chart(
-                    explainer, model, df, feature_columns
+                shap_img, shap_reasons = generate_shap_bar_chart(
+                    explainer, model, df_final, feature_columns
                 )
 
-                shap_structured = [
-                    {"feature": f, "impact": float(i)}
-                    for f, i in shap_pairs
-                ]
-
-                response["top_reasons"] = shap_structured
+                response["top_reasons"] = shap_reasons
                 response["human_explanations"] = generate_human_explanations(
-                    shap_structured
+                    shap_reasons
                 )
 
             await set_to_cache(pred_key, response, REDIS_TTL_SECONDS)
 
         if response["is_fraud"]:
-            if not await get_from_cache(alert_key):
-                logger.info(
-                    f"New fraud event → sending email | txn_id={request.transaction_id}"
-                )
-
+            already_sent = await get_from_cache(alert_key)
+            if not already_sent:
                 send_fraud_email(
                     transaction_id=request.transaction_id,
                     features=request.features,
                     fraud_probability=response["fraud_probability"],
+                    risk_scores=response["risk_scores"],
                     shap_image=shap_img,
                     shap_reasons=response["top_reasons"],
                     human_explanations=response["human_explanations"]
                 )
-
-                await set_to_cache(alert_key, True, 24 * 60 * 60)
-            else:
-                logger.info(
-                    f"Fraud email already sent | txn_id={request.transaction_id}"
-                )
+                await set_to_cache(alert_key, True, 86400)
 
         return response
 
     except Exception as e:
-        logger.exception("Prediction failed")
+        logger.exception("Inference failed")
         raise HTTPException(status_code=500, detail=str(e))

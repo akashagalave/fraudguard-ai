@@ -14,7 +14,7 @@ logger = logging.getLogger("model_building")
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
-DATA_PATH = "data/processed/train_features_v1.csv"
+DATA_PATH = "data/processed/train_features_v2.csv"
 MODEL_DIR = Path("models/fraudguard_lightgbm")
 SHAP_DIR = Path("reports/shap")
 
