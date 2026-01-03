@@ -19,7 +19,7 @@ dagshub.init(
 
 mlflow.set_experiment("fraudguard_lightgbm_evaluation")
 
-DATA_PATH = "data/processed/test_features_v1.csv"
+DATA_PATH = "data/processed/test_features_v2.csv"
 MODEL_DIR = Path("models/fraudguard_lightgbm")
 REPORT_DIR = Path("reports/evaluation")
 

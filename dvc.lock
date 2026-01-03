@@ -61,81 +61,81 @@ stages:
       size: 323018750
     - path: src/features/feature_engineering.py
       hash: md5
-      md5: 95b09395729fd72bb404c75faec9ec95
-      size: 4685
+      md5: 3933059b28d3f4f2eb240f48d49a65e6
+      size: 5821
     - path: src/features/run_feature_engineering.py
       hash: md5
-      md5: 19d6992e8ec3093aa510d3f5776db7d6
-      size: 2185
+      md5: 1eeb6172485b6a944a1a1bf32882eef9
+      size: 1649
     outs:
-    - path: data/processed/test_features_v1.csv
+    - path: data/processed/test_features_v2.csv
       hash: md5
-      md5: a2c32c5b83ce22eb79c35b8eb4ad7915
-      size: 338290428
-    - path: data/processed/train_features_v1.csv
+      md5: a3a65116ae1b51655963901ffbb6dceb
+      size: 206616273
+    - path: data/processed/train_features_v2.csv
       hash: md5
-      md5: 1c2e32537116761afec82c76d7d61b4d
-      size: 791891583
+      md5: a105d51eeb997d9b0169ccfcfd056df8
+      size: 482517410
   model_building:
     cmd: python src/model/model_building.py
     deps:
-    - path: data/processed/train_features_v1.csv
+    - path: data/processed/train_features_v2.csv
       hash: md5
-      md5: 1c2e32537116761afec82c76d7d61b4d
-      size: 791891583
+      md5: a105d51eeb997d9b0169ccfcfd056df8
+      size: 482517410
     - path: src/model/model_building.py
       hash: md5
-      md5: e93beda5af6b19eba9fce153c347d987
+      md5: 8f7a762283dee99933d1bb68f443323b
       size: 2882
     outs:
     - path: models/fraudguard_lightgbm
       hash: md5
-      md5: 2520da57de69062cd843229c19867c8c.dir
-      size: 96380255
+      md5: ef2ddb70e53b8ca4258ed1b057b9ad90.dir
+      size: 3836353
       nfiles: 3
     - path: reports/shap/shap_global_importance.csv
       hash: md5
-      md5: 0d0c8d1979d11e92b48e3d553018366e
-      size: 1537
+      md5: 4b5227aa24cc948023975e7e18a34249
+      size: 1106
     - path: reports/shap/shap_summary.png
       hash: md5
-      md5: 96319d0ba8502346b1ca5811bf6d8721
-      size: 113785
+      md5: 19957511f1d338d7e112f468b09c1c99
+      size: 118924
     - path: reports/shap/shap_summary_bar.png
       hash: md5
-      md5: f0b2326ca3f203ce62ad7fdb3157b95c
-      size: 43088
+      md5: 79a7d96c40f71954e598ac4dce4189cb
+      size: 45728
   model_evaluation:
     cmd: python src/model/model_evaluation.py
     deps:
-    - path: data/processed/test_features_v1.csv
+    - path: data/processed/test_features_v2.csv
       hash: md5
-      md5: a2c32c5b83ce22eb79c35b8eb4ad7915
-      size: 338290428
+      md5: a3a65116ae1b51655963901ffbb6dceb
+      size: 206616273
     - path: models/fraudguard_lightgbm
       hash: md5
-      md5: 2520da57de69062cd843229c19867c8c.dir
-      size: 96380255
+      md5: ef2ddb70e53b8ca4258ed1b057b9ad90.dir
+      size: 3836353
       nfiles: 3
     - path: src/model/model_evaluation.py
       hash: md5
-      md5: f15e5e2591f61921519b6aa267aebe95
+      md5: 9325a074b94658eb10c000918aa0d626
       size: 2204
     outs:
     - path: reports/evaluation/metrics.json
       hash: md5
-      md5: 6e9145495fbfce02ea0aa28d2f9455d3
+      md5: 90bad21f88474db7c0f73c01506957a4
       size: 70
     - path: run_information.json
       hash: md5
-      md5: 4b39495bb1eeb2140ec9d9000026dac2
+      md5: eba58b61b5283f39e8821c6de8d54522
       size: 155
   model_registry:
     cmd: python src/model/model_registry.py
     deps:
     - path: run_information.json
       hash: md5
-      md5: 4b39495bb1eeb2140ec9d9000026dac2
+      md5: eba58b61b5283f39e8821c6de8d54522
       size: 155
     - path: src/model/model_registry.py
       hash: md5
