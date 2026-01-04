@@ -7,7 +7,7 @@ on:
       - develop
 
 jobs:
-  ci-cd:
+  deploy:
     runs-on: ubuntu-latest
 
     env:
@@ -27,14 +27,14 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # 3️⃣ Install dev dependencies
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r dev-requirements.txt
           pip install -e .
 
-      # 4️⃣ Configure AWS credentials (DVC remote)
+      # 4️⃣ Configure AWS credentials (DVC)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -42,47 +42,40 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 5️⃣ Run DVC pipeline (train → evaluate → metrics)
-      - name: Run DVC pipeline
+      # 5️⃣ Pull latest model artifacts
+      - name: Pull model artifacts
         run: |
-          dvc repro
-          dvc push
           dvc pull
 
-      # 6️⃣ Model quality gate (BLOCKS pipeline if fails)
+      # 6️⃣ Model quality gate
       - name: Validate model performance
         run: |
           python scripts/model_quality_check.py
 
-      # 7️⃣ Register model → Staging (ONLY if quality passed)
-      - name: Register model to Staging
-        run: |
-          python scripts/model_registry.py
-
-      # 8️⃣ Promote model from Staging → Production
+      # 7️⃣ Promote model: Staging → Production
       - name: Promote model to Production
         run: |
           python scripts/promote_model.py
 
-      # 9️⃣ Login to Amazon ECR
+      # 8️⃣ Login to Amazon ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 🔟 Build & Push FastAPI image
+      # 9️⃣ Build & Push FastAPI image
       - name: Build & Push FastAPI image
         run: |
           docker build -t fraudguard-fastapi:latest -f src/serving/Dockerfile .
           docker tag fraudguard-fastapi:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
 
-      # 1️⃣1️⃣ Build & Push Kafka Producer image
+      # 🔟 Build & Push Kafka Producer
       - name: Build & Push Kafka Producer image
         run: |
           docker build -t fraudguard-producer:latest -f services/producer/Dockerfile .
           docker tag fraudguard-producer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
 
-      # 1️⃣2️⃣ Build & Push Kafka Consumer image
+      # 1️⃣1️⃣ Build & Push Kafka Consumer
       - name: Build & Push Kafka Consumer image
         run: |
           docker build -t fraudguard-consumer:latest -f services/consumer/Dockerfile .
