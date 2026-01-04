@@ -90,6 +90,7 @@ target/
 # Jupyter NB Checkpoints
 .ipynb_checkpoints/
 
+/data/
 
 
 # Mac OS-specific storage files
