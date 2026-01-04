@@ -99,8 +99,8 @@ stages:
       size: 1106
     - path: reports/shap/shap_summary.png
       hash: md5
-      md5: 19957511f1d338d7e112f468b09c1c99
-      size: 118924
+      md5: 482dfa9bd86e37da3b9c88d2f575d0d2
+      size: 118882
     - path: reports/shap/shap_summary_bar.png
       hash: md5
       md5: 79a7d96c40f71954e598ac4dce4189cb
@@ -128,14 +128,14 @@ stages:
       size: 70
     - path: run_information.json
       hash: md5
-      md5: eba58b61b5283f39e8821c6de8d54522
+      md5: 2715232beb26df795d4000865b310619
       size: 155
   model_registry:
     cmd: python src/model/model_registry.py
     deps:
     - path: run_information.json
       hash: md5
-      md5: eba58b61b5283f39e8821c6de8d54522
+      md5: 2715232beb26df795d4000865b310619
       size: 155
     - path: src/model/model_registry.py
       hash: md5
