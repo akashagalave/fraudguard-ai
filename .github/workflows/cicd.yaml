@@ -41,7 +41,7 @@ jobs:
       # ----------------------------
       # 4️⃣ CONFIGURE AWS (DVC)
       # ----------------------------
-      - name: Configure AWS credentials (DVC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -49,9 +49,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ----------------------------
-      # 5️⃣ PULL MODEL FROM DVC
+      # 5️⃣ PULL MODEL & METRICS FROM DVC
       # ----------------------------
-      - name: Pull model artifacts
+      - name: Pull DVC artifacts
         run: |
           dvc pull
 
@@ -62,7 +62,9 @@ jobs:
         run: |
           python scripts/model_quality_check.py
 
-   
+      # ----------------------------
+      # 7️⃣ PROMOTE MODEL (STAGING → PROD)
+      # ----------------------------
       - name: Promote model to production
         if: success()
         env:
@@ -77,7 +79,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # ----------------------------
-      # 9️⃣ BUILD & PUSH FASTAPI
+      # 9️⃣ BUILD & PUSH FASTAPI IMAGE
       # ----------------------------
       - name: Build & Push FastAPI image
         run: |
@@ -86,7 +88,7 @@ jobs:
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
 
       # ----------------------------
-      # 🔟 BUILD & PUSH PRODUCER
+      # 🔟 BUILD & PUSH PRODUCER IMAGE
       # ----------------------------
       - name: Build & Push Kafka Producer image
         run: |
@@ -95,7 +97,7 @@ jobs:
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
 
       # ----------------------------
-      # 1️⃣1️⃣ BUILD & PUSH CONSUMER
+      # 1️⃣1️⃣ BUILD & PUSH CONSUMER IMAGE
       # ----------------------------
       - name: Build & Push Kafka Consumer image
         run: |
