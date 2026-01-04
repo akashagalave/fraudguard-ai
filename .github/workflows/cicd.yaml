@@ -1,81 +1,106 @@
-name: FraudGuard CI-CD Pipeline
+name: FraudGuard CI-CD
 
 on:
   push:
     branches:
       - main
+      - develop
 
 jobs:
-  build-test-deploy:
+  ci-cd:
     runs-on: ubuntu-latest
 
     env:
       AWS_REGION: us-east-1
 
-      FASTAPI_ECR: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi
-      PRODUCER_ECR: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer
-      CONSUMER_ECR: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-consumer
-
     steps:
-
-      - name: Checkout Repository
+      # ----------------------------
+      # 1️⃣ CHECKOUT CODE
+      # ----------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ----------------------------
+      # 2️⃣ SETUP PYTHON
+      # ----------------------------
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: pip
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install Dependencies
+      # ----------------------------
+      # 3️⃣ INSTALL DEV DEPENDENCIES
+      # ----------------------------
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r dev-requirements.txt
+          pip install -e .
 
-      - name: Configure AWS Credentials
+      # ----------------------------
+      # 4️⃣ CONFIGURE AWS (DVC)
+      # ----------------------------
+      - name: Configure AWS credentials (DVC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Pull DVC Artifacts
+      # ----------------------------
+      # 5️⃣ PULL MODEL FROM DVC
+      # ----------------------------
+      - name: Pull model artifacts
         run: |
-          dvc remote add -d origin s3://fraudguard-dvc-storage || true
-          dvc remote modify origin access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
-          dvc remote modify origin secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           dvc pull
 
-      - name: Model Performance Gate
+      # ----------------------------
+      # 6️⃣ MODEL QUALITY GATE
+      # ----------------------------
+      - name: Validate model performance
         run: |
-          python scripts/evaluate_model.py
+          python scripts/model_quality_check.py
 
-      - name: Promote Model to Production
+      # ----------------------------
+      # 7️⃣ PROMOTE MODEL (ONLY IF PASS)
+      # ----------------------------
+      - name: Promote model to production
+        if: success()
         env:
           DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
           python scripts/promote_model.py
 
+      # ----------------------------
+      # 8️⃣ LOGIN TO ECR
+      # ----------------------------
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push FastAPI Image
+      # ----------------------------
+      # 9️⃣ BUILD & PUSH FASTAPI
+      # ----------------------------
+      - name: Build & Push FastAPI image
         run: |
           docker build -t fraudguard-fastapi:latest -f src/serving/Dockerfile .
-          docker tag fraudguard-fastapi:latest $FASTAPI_ECR:latest
-          docker push $FASTAPI_ECR:latest
+          docker tag fraudguard-fastapi:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
+          docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
 
-      - name: Build & Push Kafka Producer Image
+      # ----------------------------
+      # 🔟 BUILD & PUSH PRODUCER
+      # ----------------------------
+      - name: Build & Push Kafka Producer image
         run: |
-          docker build -t fraudguard-producer -f services/producer/Dockerfile .
-          docker tag fraudguard-producer:latest $PRODUCER_ECR:latest
-          docker push $PRODUCER_ECR:latest
+          docker build -t fraudguard-producer:latest -f services/producer/Dockerfile .
+          docker tag fraudguard-producer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
+          docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
 
-      - name: Build & Push Kafka Consumer Image
+      # ----------------------------
+      # 1️⃣1️⃣ BUILD & PUSH CONSUMER
+      # ----------------------------
+      - name: Build & Push Kafka Consumer image
         run: |
-          docker build -t fraudguard-consumer -f services/consumer/Dockerfile .
-          docker tag fraudguard-consumer:latest $CONSUMER_ECR:latest
-          docker push $CONSUMER_ECR:latest
-
-      - name: CI/CD Completed
-        run: echo "FraudGuard CI/CD pipeline finished successfully"
+          docker build -t fraudguard-consumer:latest -f services/consumer/Dockerfile .
+          docker tag fraudguard-consumer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-consumer:latest
+          docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-consumer:latest
