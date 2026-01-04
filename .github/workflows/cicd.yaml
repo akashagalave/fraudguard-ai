@@ -62,9 +62,7 @@ jobs:
         run: |
           python scripts/model_quality_check.py
 
-      # ----------------------------
-      # 7️⃣ PROMOTE MODEL (ONLY IF PASS)
-      # ----------------------------
+   
       - name: Promote model to production
         if: success()
         env:
