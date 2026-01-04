@@ -55,6 +55,12 @@ jobs:
         run: |
           dvc pull
 
+
+      - name: List DVC pulled files
+        run: |
+            ls -R reports/evaluation
+
+        
       # ----------------------------
       # 6️⃣ MODEL QUALITY GATE
       # ----------------------------
