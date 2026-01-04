@@ -14,97 +14,72 @@ jobs:
       AWS_REGION: us-east-1
 
     steps:
-      # ----------------------------
-      # 1️⃣ CHECKOUT CODE
-      # ----------------------------
+      # 1️⃣ Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ----------------------------
-      # 2️⃣ SETUP PYTHON
-      # ----------------------------
+      # 2️⃣ Setup Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      # ----------------------------
-      # 3️⃣ INSTALL DEV DEPENDENCIES
-      # ----------------------------
+      # 3️⃣ Install dev dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r dev-requirements.txt
           pip install -e .
 
-      # ----------------------------
-      # 4️⃣ CONFIGURE AWS (DVC)
-      # ----------------------------
-      - name: Configure AWS credentials
+      # 4️⃣ Configure AWS (DVC)
+      - name: Configure AWS credentials (DVC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ----------------------------
-      # 5️⃣ PULL MODEL & METRICS FROM DVC
-      # ----------------------------
-      - name: Pull DVC artifacts
-        run: |
-          dvc pull
+      # 5️⃣ Pull model artifacts from DVC
+      - name: Pull model artifacts
+        run: dvc pull
 
-
-      - name: List DVC pulled files
-        run: |
-            ls -R reports/evaluation
-
-        
-      # ----------------------------
-      # 6️⃣ MODEL QUALITY GATE
-      # ----------------------------
+      # 6️⃣ Model quality check
       - name: Validate model performance
+        id: quality_check
         run: |
           python scripts/model_quality_check.py
+        continue-on-error: false
 
-      # ----------------------------
-      # 7️⃣ PROMOTE MODEL (STAGING → PROD)
-      # ----------------------------
-      - name: Promote model to production
+      # 7️⃣ Register model to Staging (only if quality passed)
+      - name: Register model to Staging
+        if: success()
+        run: python scripts/model_registry.py
+
+      # 8️⃣ Promote model from Staging → Production
+      - name: Promote model to Production
         if: success()
         env:
           DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python scripts/promote_model.py
+        run: python scripts/promote_model.py
 
-      # ----------------------------
-      # 8️⃣ LOGIN TO ECR
-      # ----------------------------
+      # 9️⃣ Login to Amazon ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # ----------------------------
-      # 9️⃣ BUILD & PUSH FASTAPI IMAGE
-      # ----------------------------
+      # 🔟 Build & push Docker images
       - name: Build & Push FastAPI image
         run: |
           docker build -t fraudguard-fastapi:latest -f src/serving/Dockerfile .
           docker tag fraudguard-fastapi:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
 
-      # ----------------------------
-      # 🔟 BUILD & PUSH PRODUCER IMAGE
-      # ----------------------------
       - name: Build & Push Kafka Producer image
         run: |
           docker build -t fraudguard-producer:latest -f services/producer/Dockerfile .
           docker tag fraudguard-producer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
 
-      # ----------------------------
-      # 1️⃣1️⃣ BUILD & PUSH CONSUMER IMAGE
-      # ----------------------------
       - name: Build & Push Kafka Consumer image
         run: |
           docker build -t fraudguard-consumer:latest -f services/consumer/Dockerfile .
