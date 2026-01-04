@@ -12,6 +12,8 @@ jobs:
 
     env:
       AWS_REGION: us-east-1
+      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+      MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
 
     steps:
       # 1️⃣ Checkout code
@@ -22,8 +24,8 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       # 3️⃣ Install dev dependencies
       - name: Install dependencies
@@ -32,54 +34,55 @@ jobs:
           pip install -r dev-requirements.txt
           pip install -e .
 
-      # 4️⃣ Configure AWS (DVC)
-      - name: Configure AWS credentials (DVC)
+      # 4️⃣ Configure AWS credentials (DVC remote)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 5️⃣ Pull model artifacts from DVC
-      - name: Pull model artifacts
-        run: dvc pull
+      # 5️⃣ Run DVC pipeline (train → evaluate → metrics)
+      - name: Run DVC pipeline
+        run: |
+          dvc repro
+          dvc push
+          dvc pull
 
-      # 6️⃣ Model quality check
+      # 6️⃣ Model quality gate (BLOCKS pipeline if fails)
       - name: Validate model performance
-        id: quality_check
         run: |
           python scripts/model_quality_check.py
-        continue-on-error: false
 
-      # 7️⃣ Register model to Staging (only if quality passed)
+      # 7️⃣ Register model → Staging (ONLY if quality passed)
       - name: Register model to Staging
-        if: success()
-        run: python scripts/model_registry.py
+        run: |
+          python scripts/model_registry.py
 
       # 8️⃣ Promote model from Staging → Production
       - name: Promote model to Production
-        if: success()
-        env:
-          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: python scripts/promote_model.py
+        run: |
+          python scripts/promote_model.py
 
       # 9️⃣ Login to Amazon ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 🔟 Build & push Docker images
+      # 🔟 Build & Push FastAPI image
       - name: Build & Push FastAPI image
         run: |
           docker build -t fraudguard-fastapi:latest -f src/serving/Dockerfile .
           docker tag fraudguard-fastapi:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
 
+      # 1️⃣1️⃣ Build & Push Kafka Producer image
       - name: Build & Push Kafka Producer image
         run: |
           docker build -t fraudguard-producer:latest -f services/producer/Dockerfile .
           docker tag fraudguard-producer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
           docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
 
+      # 1️⃣2️⃣ Build & Push Kafka Consumer image
       - name: Build & Push Kafka Consumer image
         run: |
           docker build -t fraudguard-consumer:latest -f services/consumer/Dockerfile .
