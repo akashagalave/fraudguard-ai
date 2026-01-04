@@ -90,7 +90,14 @@ target/
 # Jupyter NB Checkpoints
 .ipynb_checkpoints/
 
-/data/
+
+# Ignore all data
+/data/**
+
+# Allow DVC tracking
+!data/**/*.dvc
+!data/**/*.dvc.lock
+!data/**/.gitignore
 
 
 # Mac OS-specific storage files
