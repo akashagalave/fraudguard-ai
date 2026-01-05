@@ -91,13 +91,19 @@ target/
 .ipynb_checkpoints/
 
 
-# Ignore all data
+# Ignore all data by default
 /data/**
 
-# Allow DVC tracking
+# BUT allow DVC-managed outputs
+!data/raw/**
+!data/interim/**
+!data/processed/**
 !data/**/*.dvc
 !data/**/*.dvc.lock
-!data/**/.gitignore
+
+
+
+
 
 
 # Mac OS-specific storage files
