@@ -3,7 +3,7 @@ name: FraudGuard Model Training
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * 0"
+    - cron: "0 2 * * 0"   # Weekly Sunday 2 AM UTC
 
 jobs:
   train:
@@ -15,26 +15,43 @@ jobs:
       MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
 
     steps:
+      # 1️⃣ Checkout code
       - uses: actions/checkout@v4
 
+      # 2️⃣ Setup Python
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
           pip install -r dev-requirements.txt
           pip install -e .
 
-      - name: Configure AWS (DVC)
+      # 4️⃣ Configure AWS credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Train model
+      # 5️⃣ Pull external RAW data from S3 (CRITICAL STEP)
+      - name: Fetch external raw data
         run: |
-          dvc pull
-          dvc repro
-          dvc push
+          mkdir -p data/external
+          aws s3 cp s3://fraudguard-raw-data/data/external/ data/external/ --recursive
+          ls -lh data/external
+
+      # 6️⃣ Pull DVC tracked artifacts
+      - name: DVC Pull
+        run: dvc pull
+
+      # 7️⃣ Run full training pipeline
+      - name: Train Model (DVC Repro)
+        run: dvc repro
+
+      # 8️⃣ Push updated artifacts to DVC remote
+      - name: DVC Push
+        run: dvc push

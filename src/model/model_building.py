@@ -18,6 +18,7 @@ DATA_PATH = "data/processed/train_features_v2.csv"
 MODEL_DIR = Path("models/fraudguard_lightgbm")
 SHAP_DIR = Path("reports/shap")
 
+
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 SHAP_DIR.mkdir(parents=True, exist_ok=True)
 
