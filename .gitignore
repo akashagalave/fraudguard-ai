@@ -91,17 +91,19 @@ target/
 .ipynb_checkpoints/
 
 
-# Ignore all data by default
+# Ignore everything inside data
 /data/**
 
-# BUT allow DVC-managed outputs
-!data/raw/**
-!data/interim/**
-!data/processed/**
+# Allow directory traversal
+!data/
+!data/**/
+
+# Allow DVC files
 !data/**/*.dvc
 !data/**/*.dvc.lock
 
-
+# Allow nested gitignore
+!data/**/.gitignore
 
 
 
