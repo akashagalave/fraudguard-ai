@@ -1,0 +1,16 @@
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: fraudguard-kafka
+  namespace: fraudguard
+spec:
+  kafka:
+    version: 3.6.0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

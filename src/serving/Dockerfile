@@ -25,6 +25,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # Copy application code (NO MODELS)
 # ===============================
 COPY src /app/src
+COPY models/ /app/models/
+
 
 # ===============================
 # Python path
