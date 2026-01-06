@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraudguard-fastapi-svc
+  namespace: fraudguard
+spec:
+  type: LoadBalancer
+  selector:
+    app: fraudguard-fastapi
+  ports:
+    - port: 80
+      targetPort: 8000

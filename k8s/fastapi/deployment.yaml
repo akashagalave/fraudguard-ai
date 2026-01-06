@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraudguard-fastapi
+  namespace: fraudguard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fraudguard-fastapi
+  template:
+    metadata:
+      labels:
+        app: fraudguard-fastapi
+    spec:
+      containers:
+        - name: fastapi
+          image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8000
+
+          # 🔐 Inject DAGsHub token securely
+          env:
+            - name: DAGSHUB_USER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dagshub-secret
+                  key: DAGSHUB_USER_TOKEN
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
