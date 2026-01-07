@@ -1,6 +1,17 @@
-import os
+
 from dotenv import load_dotenv
 load_dotenv()
+import os
+REDIS_HOST = os.getenv("APP_REDIS_HOST", "localhost")
+_raw_port = os.getenv("APP_REDIS_PORT", "6379")
+try:
+    REDIS_PORT = int(_raw_port)
+except ValueError:
+    # handles tcp://10.x.x.x:6379 injected by k8s
+    REDIS_PORT = int(_raw_port.split(":")[-1])
+
+REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 3600))
+
 
 
 
@@ -16,11 +27,8 @@ MODEL_STAGE = "Production"
 FRAUD_THRESHOLD = 0.01
 
 
-REDIS_HOST = os.getenv("APP_REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("APP_REDIS_PORT", 6379))
-
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
-REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 3600))
+
 
 
 EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() == "true"
