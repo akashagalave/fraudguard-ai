@@ -13,16 +13,13 @@ jobs:
     env:
       AWS_REGION: us-east-1
 
-      # 🔥 DAGsHub / MLflow AUTH (CRITICAL)
+      # 🔥 DAGsHub / MLflow AUTH
       MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
       MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
       MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
 
-      # 🔥 REQUIRED for dagshub.init()
+      # 🔥 Required for dagshub.init()
       DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-
-      # ✅ SINGLE SOURCE OF TRUTH
-      EKS_CLUSTER_NAME: fraudguard-cluster
 
     steps:
       # ============================
@@ -60,7 +57,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ============================
-      # 5️⃣ MODEL LIFECYCLE
+      # 5️⃣ MODEL LIFECYCLE (CI CORE)
       # ============================
       - name: DVC Pull
         run: dvc pull
@@ -72,7 +69,7 @@ jobs:
         run: python scripts/promote_model.py
 
       # ============================
-      # 6️⃣ MLflow → S3 (Seldon modelUri)
+      # 6️⃣ MLflow → S3 (Model Store)
       # ============================
       - name: Download Production model from MLflow
         run: |
@@ -80,29 +77,14 @@ jobs:
             --artifact-uri models:/fraudguard_lightgbm/Production \
             --dst-path ./mlflow_model
 
-      - name: Sync model to S3 (Seldon modelUri)
+      - name: Sync model to S3
         run: |
           aws s3 sync ./mlflow_model \
             s3://fraudguard-models/production \
             --delete
 
       # ============================
-      # 7️⃣ EKS ACCESS (FIXED)
-      # ============================
-      - name: Configure EKS kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region us-east-1 \
-            --name $EKS_CLUSTER_NAME
-
-      - name: Restart Seldon deployment (rolling)
-        run: |
-          kubectl rollout restart deployment \
-            -n fraudguard \
-            -l seldon-deployment-id=fraudguard
-
-      # ============================
-      # 8️⃣ APPLICATION IMAGES
+      # 7️⃣ APPLICATION IMAGES
       # ============================
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
