@@ -1,0 +1,46 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraudguard-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+  - name: fraudguard.rules
+    rules:
+
+    - alert: FraudGuardHighLatency
+      expr: |
+        histogram_quantile(
+          0.95,
+          sum by (le) (
+            rate(fraud_inference_latency_seconds_bucket[5m])
+          )
+        ) > 1
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High p95 latency detected"
+        description: "FraudGuard p95 latency > 1s for 2 minutes"
+
+    - alert: FraudGuardFraudSpike
+      expr: |
+        rate(fraud_alerts_sent_total[5m]) > 0.5
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Fraud alert spike detected"
+        description: "Fraud alerts > 30 per minute"
+
+    - alert: FraudGuardNoTraffic
+      expr: |
+        rate(fraud_requests_total[5m]) == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "FraudGuard has no traffic"
+        description: "No incoming requests for 2 minutes"
