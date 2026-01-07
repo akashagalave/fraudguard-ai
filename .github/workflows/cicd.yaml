@@ -13,10 +13,13 @@ jobs:
     env:
       AWS_REGION: us-east-1
 
-      # 🔥 MLflow (DAGsHub) – CRITICAL
+      # 🔥 DAGsHub / MLflow AUTH (CRITICAL)
       MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
       MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
       MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+
+      # 🔥 REQUIRED for dagshub.init()
+      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
 
     steps:
       # ============================
@@ -38,7 +41,7 @@ jobs:
       # ============================
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r dev-requirements.txt
           pip install -e .
           pip install mlflow dagshub
@@ -66,7 +69,7 @@ jobs:
         run: python scripts/promote_model.py
 
       # ============================
-      # 6️⃣ MLflow → S3 (Seldon)
+      # 6️⃣ MLflow → S3 (Seldon modelUri)
       # ============================
       - name: Download Production model from MLflow
         run: |
@@ -81,7 +84,7 @@ jobs:
             --delete
 
       # ============================
-      # 7️⃣ 🔥 EKS ACCESS (MUST BE BEFORE kubectl)
+      # 7️⃣ EKS ACCESS (MUST be before kubectl)
       # ============================
       - name: Configure EKS kubeconfig
         run: |
