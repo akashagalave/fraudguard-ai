@@ -21,6 +21,9 @@ jobs:
       # 🔥 REQUIRED for dagshub.init()
       DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
 
+      # ✅ SINGLE SOURCE OF TRUTH
+      EKS_CLUSTER_NAME: fraudguard-cluster
+
     steps:
       # ============================
       # 1️⃣ Checkout
@@ -84,13 +87,13 @@ jobs:
             --delete
 
       # ============================
-      # 7️⃣ EKS ACCESS (MUST be before kubectl)
+      # 7️⃣ EKS ACCESS (FIXED)
       # ============================
       - name: Configure EKS kubeconfig
         run: |
           aws eks update-kubeconfig \
             --region us-east-1 \
-            --name fraudguard-eks
+            --name $EKS_CLUSTER_NAME
 
       - name: Restart Seldon deployment (rolling)
         run: |
