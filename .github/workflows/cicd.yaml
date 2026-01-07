@@ -57,7 +57,7 @@ jobs:
       - name: Download Production model from MLflow
         run: |
           mlflow artifacts download \
-            --artifact-uri models:/FraudGuardModel/Production \
+            --artifact-uri models:/fraudguard_lightgbm/Production \
             --dst-path ./mlflow_model
 
       - name: Sync model to S3 (Seldon modelUri)
