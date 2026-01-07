@@ -12,24 +12,40 @@ jobs:
 
     env:
       AWS_REGION: us-east-1
-      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-      MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+
+      # 🔥 MLflow (DAGsHub) – CRITICAL
+      MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
+      MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
 
     steps:
+      # ============================
+      # 1️⃣ Checkout
+      # ============================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ============================
+      # 2️⃣ Python setup
+      # ============================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # ============================
+      # 3️⃣ Install dependencies
+      # ============================
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r dev-requirements.txt
           pip install -e .
-          pip install mlflow
+          pip install mlflow dagshub
 
+      # ============================
+      # 4️⃣ AWS credentials
+      # ============================
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -38,9 +54,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ============================
-      # MODEL LIFECYCLE
+      # 5️⃣ MODEL LIFECYCLE
       # ============================
-
       - name: DVC Pull
         run: dvc pull
 
@@ -51,9 +66,8 @@ jobs:
         run: python scripts/promote_model.py
 
       # ============================
-      # 🔥 NEW: MLflow → S3 → Seldon
+      # 6️⃣ MLflow → S3 (Seldon)
       # ============================
-
       - name: Download Production model from MLflow
         run: |
           mlflow artifacts download \
@@ -63,18 +77,27 @@ jobs:
       - name: Sync model to S3 (Seldon modelUri)
         run: |
           aws s3 sync ./mlflow_model \
-            s3://fraudguard-models/production --delete
+            s3://fraudguard-models/production \
+            --delete
 
-      - name: Restart Seldon (rolling)
+      # ============================
+      # 7️⃣ 🔥 EKS ACCESS (MUST BE BEFORE kubectl)
+      # ============================
+      - name: Configure EKS kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region us-east-1 \
+            --name fraudguard-eks
+
+      - name: Restart Seldon deployment (rolling)
         run: |
           kubectl rollout restart deployment \
             -n fraudguard \
             -l seldon-deployment-id=fraudguard
 
       # ============================
-      # APPLICATION IMAGES
+      # 8️⃣ APPLICATION IMAGES
       # ============================
-
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
