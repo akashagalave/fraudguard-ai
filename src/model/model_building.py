@@ -18,7 +18,6 @@ DATA_PATH = "data/processed/train_features_v2.csv"
 MODEL_DIR = Path("models/fraudguard_lightgbm")
 SHAP_DIR = Path("reports/shap")
 
-
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 SHAP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -72,12 +71,19 @@ pr_auc = average_precision_score(y_val, y_prob)
 logger.info(f"ROC-AUC: {roc_auc:.4f}")
 logger.info(f"PR-AUC : {pr_auc:.4f}")
 
+# =========================
+# Save model & metadata
+# =========================
 joblib.dump(model, MODEL_DIR / "model.pkl")
 json.dump(list(X.columns), open(MODEL_DIR / "feature_columns.json", "w"))
 json.dump(categorical_cols, open(MODEL_DIR / "categorical_cols.json", "w"))
 
+# =========================
+# SHAP
+# =========================
 explainer = shap.TreeExplainer(model)
 shap_values = explainer.shap_values(X_val)
+
 if isinstance(shap_values, list):
     shap_values = shap_values[1]
 
@@ -95,5 +101,17 @@ plt.close()
 shap.summary_plot(shap_values, X_val, plot_type="bar", show=False)
 plt.savefig(SHAP_DIR / "shap_summary_bar.png", bbox_inches="tight")
 plt.close()
+
+# =========================
+# 🔥 NEW: SAVE ARTIFACTS
+# =========================
+artifacts = {
+    "feature_columns": list(X.columns),
+    "categorical_cols": categorical_cols,
+    "explainer": explainer
+}
+
+joblib.dump(artifacts, MODEL_DIR / "artifacts.pkl")
+logger.info("✅ artifacts.pkl saved")
 
 logger.info("Model training completed")
