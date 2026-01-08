@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import time
+import os
 from pathlib import Path
 
 import joblib
@@ -26,31 +27,32 @@ from src.serving.shap_utils import generate_shap_bar_chart, generate_human_expla
 from src.serving.email_service import send_fraud_email
 
 
-# --------------------
+# ============================
 # Setup
-# --------------------
+# ============================
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
 app = FastAPI(title="FraudGuard AI", version="2.0.0")
 
-feature_columns = None
-artifacts = {}
+feature_columns: list[str] | None = None
+artifacts: dict = {}
+local_model = None
 
 
-# --------------------
-# Seldon Configuration
-# --------------------
-SELDON_URL ="http://fraudguard-default.fraudguard.svc.cluster.local:8000/api/v1.0/predictions"
+# ============================
+# ENV CONFIG
+# ============================
+USE_SELDON = os.getenv("USE_SELDON", "false").lower() == "true"
 
+SELDON_URL = os.getenv(
+    "SELDON_URL",
+    "http://fraudguard-default.fraudguard.svc.cluster.local:8000/api/v1.0/predictions"
+)
 
 
 def call_seldon(df: pd.DataFrame) -> float:
-    """
-    Call Seldon inference service.
-    Returns fraud probability.
-    """
     payload = {
         "data": {
             "ndarray": df.values.tolist()
@@ -58,17 +60,17 @@ def call_seldon(df: pd.DataFrame) -> float:
     }
 
     try:
-        resp = requests.post(SELDON_URL, json=payload, timeout=2)
+        resp = requests.post(SELDON_URL, json=payload, timeout=3)
         resp.raise_for_status()
-        return float(resp.json()["data"]["ndarray"][0])
+        return float(resp.json()["data"]["ndarray"][0][0])
     except Exception as e:
-        logger.exception("Seldon inference failed")
+        logger.exception("❌ Seldon inference failed")
         raise RuntimeError("Model inference service unavailable") from e
 
 
-# --------------------
+# ============================
 # Prometheus Metrics
-# --------------------
+# ============================
 REQUESTS_TOTAL = Counter(
     "fraud_requests_total",
     "Total fraud prediction requests"
@@ -91,29 +93,45 @@ INFERENCE_LATENCY = Histogram(
 )
 
 
-# --------------------
+# ============================
 # Startup
-# --------------------
+# ============================
 @app.on_event("startup")
 async def startup_event():
-    global feature_columns, artifacts
+    global feature_columns, artifacts, local_model
+
+    logger.info("🔄 Loading model artifacts...")
 
     artifacts_path = Path("models/fraudguard_lightgbm/artifacts.pkl")
-    artifacts = joblib.load(artifacts_path) if artifacts_path.exists() else {}
+    model_path = Path("models/fraudguard_lightgbm/model.pkl")
+
+    if not artifacts_path.exists():
+        logger.error("❌ artifacts.pkl missing")
+        raise RuntimeError("artifacts.pkl not found")
+
+    artifacts = joblib.load(artifacts_path)
 
     feature_columns = artifacts.get("feature_columns")
+    if not feature_columns:
+        raise RuntimeError("feature_columns missing in artifacts")
+
+    if not USE_SELDON:
+        logger.info("🧪 LOCAL MODE: Loading model.pkl")
+        if not model_path.exists():
+            raise RuntimeError("model.pkl missing for local inference")
+        local_model = joblib.load(model_path)
 
     try:
         await init_redis()
     except Exception:
-        logger.warning("Redis not available – running without cache")
+        logger.warning("⚠️ Redis not available – running without cache")
 
-    logger.info("🚀 FraudGuard API (Seldon-backed) started")
+    logger.info("🚀 FraudGuard API started successfully")
 
 
-# --------------------
+# ============================
 # Helpers
-# --------------------
+# ============================
 def build_prediction_cache_key(features: dict) -> str:
     serialized = json.dumps(features, sort_keys=True)
     return "fraud_pred:" + hashlib.sha256(serialized.encode()).hexdigest()
@@ -123,9 +141,9 @@ def build_alert_cache_key(transaction_id: str) -> str:
     return f"fraud_alert_sent:{transaction_id}"
 
 
-# --------------------
+# ============================
 # Metrics Endpoint
-# --------------------
+# ============================
 @app.get("/metrics")
 def metrics():
     return Response(
@@ -134,9 +152,9 @@ def metrics():
     )
 
 
-# --------------------
+# ============================
 # Prediction API
-# --------------------
+# ============================
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(
     request: PredictionRequest,
@@ -149,16 +167,10 @@ async def predict(
         pred_key = build_prediction_cache_key(request.features)
         alert_key = build_alert_cache_key(request.transaction_id)
 
-        # --------------------
-        # Cache lookup
-        # --------------------
         cached = await get_from_cache(pred_key)
         if cached:
             response = cached
         else:
-            # --------------------
-            # Feature engineering
-            # --------------------
             raw_df = pd.DataFrame([request.features])
 
             engineered_df, _ = build_features(
@@ -170,18 +182,22 @@ async def predict(
             row = {}
             for col in feature_columns:
                 val = engineered_df[col].iloc[0] if col in engineered_df else 0
-                row[col] = val if isinstance(val, (int, float, np.number)) else 0
+                row[col] = float(val) if isinstance(val, (int, float, np.number)) else 0.0
 
             df_final = (
-                pd.DataFrame([row])
+                pd.DataFrame([row])[feature_columns]
                 .apply(pd.to_numeric, errors="coerce")
                 .fillna(0)
-            )[feature_columns]
+            )
 
-            # --------------------
-            # 🔥 Seldon Inference
-            # --------------------
-            prob = call_seldon(df_final)
+            # ============================
+            # Inference
+            # ============================
+            if USE_SELDON:
+                prob = call_seldon(df_final)
+            else:
+                prob = float(local_model.predict_proba(df_final)[0][1])
+
             is_fraud = prob >= FRAUD_THRESHOLD
 
             shap_reasons = []
@@ -209,15 +225,13 @@ async def predict(
 
             await set_to_cache(pred_key, response, REDIS_TTL_SECONDS)
 
-        # --------------------
-        # Email alert (async + idempotent)
-        # --------------------
+        # ============================
+        # Email Alerts
+        # ============================
         if response["is_fraud"]:
             already_sent = await get_from_cache(alert_key)
-
             if not already_sent:
                 EMAIL_ALERTS_SENT.inc()
-
                 background_tasks.add_task(
                     send_fraud_email,
                     request.transaction_id,
@@ -228,13 +242,12 @@ async def predict(
                     response["top_reasons"],
                     response["human_explanations"]
                 )
-
                 await set_to_cache(alert_key, True, 86400)
 
         return response
 
     except Exception as e:
-        logger.exception("Inference failed")
+        logger.exception("❌ Inference failed")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
