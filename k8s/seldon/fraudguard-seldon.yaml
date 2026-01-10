@@ -1,14 +1,27 @@
 apiVersion: machinelearning.seldon.io/v1
 kind: SeldonDeployment
 metadata:
-  name: fraudguard
+  name: fraudguard-model
   namespace: fraudguard
 spec:
-  protocol: seldon
+  name: fraudguard-model
   predictors:
     - name: default
       replicas: 1
       graph:
-        name: fraudguard-model
-        implementation: SKLEARN_SERVER
-        modelUri: s3://fraudguard-models/production
+        name: classifier
+        type: MODEL
+        children: []
+      componentSpecs:
+        - spec:
+            containers:
+              - name: classifier
+                image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-seldon:latest
+                imagePullPolicy: Always
+                resources:
+                  requests:
+                    memory: "1Gi"
+                    cpu: "500m"
+                  limits:
+                    memory: "2Gi"
+                    cpu: "1000m"

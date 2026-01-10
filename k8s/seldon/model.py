@@ -1,33 +1,33 @@
 import joblib
+import json
 import numpy as np
-import os
-import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-class FraudGuardModel:
+class Model:
     def __init__(self):
-        """
-        Called once when container starts
-        """
-        model_path = "/models/model.pkl"
+        print("📥 Loading model...")
 
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model not found at {model_path}")
+        self.model = joblib.load("/app/model.pkl")
 
-        self.model = joblib.load(model_path)
-        logger.info("✅ FraudGuard model loaded successfully")
+        with open("/app/feature_columns.json") as f:
+            self.feature_columns = json.load(f)
 
-    def predict(self, X, names=None):
-        """
-        Seldon inference entrypoint
-        """
+        self.expected_features = len(self.feature_columns)
+        print(f" Model loaded | Expecting {self.expected_features} features")
+
+    def predict(self, X, feature_names=None, meta=None):
         X = np.array(X)
+        print(f"🔮 Input shape: {X.shape}")
 
-        if X.ndim != 2:
-            raise ValueError("Input must be 2D array")
+        if X.shape[1] != self.expected_features:
+            raise ValueError(
+                f"Feature mismatch: expected {self.expected_features}, got {X.shape[1]}"
+            )
 
-        probs = self.model.predict_proba(X)[:, 1]
-        return probs.reshape(-1, 1)
+        prob = float(self.model.predict_proba(X)[0][1])
+
+        return {
+            "data": {
+                "names": ["probability"],
+                "ndarray": [prob]
+            }
+        }

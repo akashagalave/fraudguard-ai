@@ -1,4 +1,0 @@
-numpy
-joblib
-scikit-learn
-seldon-core==1.18.2
