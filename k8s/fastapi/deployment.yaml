@@ -21,13 +21,26 @@ spec:
           ports:
             - containerPort: 8000
 
-          # 🔐 Inject DAGsHub token securely
           env:
-            - name: DAGSHUB_USER_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: dagshub-secret
-                  key: DAGSHUB_USER_TOKEN
+            - name: SELDON_URL
+              value: "http://fraudguard-model-default.fraudguard.svc.cluster.local:8000/api/v1.0/predictions"
+
+        
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
 
           resources:
             requests:

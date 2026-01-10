@@ -41,16 +41,11 @@ def send_fraud_email(
         msg["From"] = SMTP_USER
         msg["To"] = ALERT_RECEIVER_EMAIL
 
-        # ---------------------------
-        # Human explanation list
-        # ---------------------------
+
         human_html = "".join(
             f"<li>{e}</li>" for e in human_explanations
         ) or "<li>Unusual transaction behavior detected</li>"
 
-        # ---------------------------
-        # Safe transaction summary
-        # ---------------------------
         hour = features.get("hour")
         hour_display = f"Hour {hour}" if hour is not None else "N/A"
 
@@ -64,9 +59,6 @@ def send_fraud_email(
         </table>
         """
 
-        # ---------------------------
-        # Technical SHAP section
-        # ---------------------------
         technical_html = "".join(
             f"<li><b>{r['feature']}</b>: {r['impact']:.4f}</li>"
             for r in shap_reasons
@@ -114,9 +106,6 @@ def send_fraud_email(
 
         msg.attach(MIMEText(html, "html"))
 
-        # ---------------------------
-        # Attach SHAP image
-        # ---------------------------
         if shap_image:
             try:
                 img_bytes = base64.b64decode(shap_image)
@@ -127,9 +116,6 @@ def send_fraud_email(
             except Exception:
                 logger.exception("Failed to attach SHAP image")
 
-        # ---------------------------
-        # SMTP send (SAFE)
-        # ---------------------------
         server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
         server.ehlo()
         server.starttls()
@@ -140,6 +126,6 @@ def send_fraud_email(
         logger.info("Fraud email sent successfully")
 
     except Exception as e:
-        # 🔥 NEVER crash inference
+
         logger.error("Fraud email failed, continuing inference", exc_info=e)
         return

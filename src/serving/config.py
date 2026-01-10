@@ -24,7 +24,7 @@ MODEL_NAME = "fraudguard_lightgbm"
 MODEL_STAGE = "Production"
 
 
-FRAUD_THRESHOLD = 0.01
+FRAUD_THRESHOLD = 0.3
 
 
 REDIS_DB = int(os.getenv("REDIS_DB", 0))

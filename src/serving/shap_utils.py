@@ -7,7 +7,6 @@ from io import BytesIO
 def generate_shap_bar_chart(explainer, model, df, feature_columns, top_k=5):
     shap_values = explainer.shap_values(df)
 
-    # LightGBM binary classifier fix
     if isinstance(shap_values, list):
         shap_values = shap_values[1]
 

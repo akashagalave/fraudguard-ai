@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fraudguard-ingress
+  namespace: fraudguard
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /predict
+            pathType: Prefix
+            backend:
+              service:
+                name: fraudguard-fastapi-svc
+                port:
+                  number: 80
+          - path: /seldon
+            pathType: Prefix
+            backend:
+              service:
+                name: fraudguard-model-default
+                port:
+                  number: 8000

@@ -15,10 +15,6 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-
-# ------------------------------------------------------------------
-# Tier 1 Features
-# ------------------------------------------------------------------
 def tier1_features(
     df: pd.DataFrame,
     merchant_txn_count: Optional[pd.Series] = None
@@ -58,9 +54,6 @@ def tier1_features(
     return df, merchant_txn_count
 
 
-# ------------------------------------------------------------------
-# Tier 2 Features
-# ------------------------------------------------------------------
 def tier2_features(df: pd.DataFrame):
     df = df.copy()
     logger.info("Tier-2 FE started")
@@ -95,9 +88,6 @@ def tier2_features(df: pd.DataFrame):
     return df
 
 
-# ------------------------------------------------------------------
-# Card Stats
-# ------------------------------------------------------------------
 def fit_card_stats(df: pd.DataFrame):
     logger.info("Fitting card-level statistics (TRAIN ONLY)")
     return {
@@ -126,9 +116,6 @@ def apply_card_stats(df: pd.DataFrame, stats: Optional[Dict]):
     return df
 
 
-# ------------------------------------------------------------------
-# MAIN ENTRY
-# ------------------------------------------------------------------
 def build_features(
     df: pd.DataFrame,
     mode: str,
@@ -163,10 +150,9 @@ def build_features(
         df = tier2_features(df)
         df = apply_card_stats(df, card_stats)
 
-    # 🔥 DROP IDENTIFIERS
+
     df = df.drop(columns=["cc_num", "merchant", "category"], errors="ignore")
 
-    # 🔥 FINAL NUMERIC-ONLY GUARANTEE
     for col in df.columns:
         if df[col].dtype == "object" or str(df[col].dtype) == "category":
             df[col] = pd.factorize(df[col])[0]
