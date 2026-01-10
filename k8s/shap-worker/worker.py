@@ -81,17 +81,31 @@ def create_consumer() -> Consumer:
 def compute_shap(features: Dict[str, Any]) -> List[Dict[str, float]]:
     raw_df = pd.DataFrame([features])
 
-    # ✅ Correct: pass FEATURE ARTIFACTS (dict)
+    # Build numeric features using training logic
     features_df, _ = build_features(
         raw_df,
         mode="test",
         artifacts=feature_artifacts
     )
 
-    features_df = features_df.reindex(columns=feature_columns, fill_value=0.0)
+    # Force alignment
+    features_df = features_df.reindex(
+        columns=feature_columns,
+        fill_value=0.0
+    )
 
     shap_values = explainer.shap_values(features_df)
-    values = shap_values[1][0]  # fraud class
+
+    # 🔥 HANDLE BOTH SHAP OUTPUT FORMATS SAFELY
+    if isinstance(shap_values, list):
+        # Binary classifier → take fraud class if exists
+        if len(shap_values) > 1:
+            values = shap_values[1][0]
+        else:
+            values = shap_values[0][0]
+    else:
+        # New LightGBM behavior → single ndarray
+        values = shap_values[0]
 
     shap_pairs = list(zip(feature_columns, values))
     shap_pairs.sort(key=lambda x: abs(x[1]), reverse=True)
@@ -100,6 +114,7 @@ def compute_shap(features: Dict[str, Any]) -> List[Dict[str, float]]:
         {"feature": feature, "impact": float(value)}
         for feature, value in shap_pairs[:TOP_K]
     ]
+
 
 # ============================
 # Main loop
