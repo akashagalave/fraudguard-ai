@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraudguard-shap-worker
+  namespace: fraudguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraudguard-shap-worker
+  template:
+    metadata:
+      labels:
+        app: fraudguard-shap-worker
+    spec:
+      containers:
+        - name: shap-worker
+          image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-shap-worker:latest
+          imagePullPolicy: Always
+
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "fraudguard-kafka-kafka-bootstrap.fraudguard.svc.cluster.local:9092"
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
