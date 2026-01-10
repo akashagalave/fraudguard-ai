@@ -1,0 +1,14 @@
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fraud-events
+  namespace: fraudguard
+  labels:
+    strimzi.io/cluster: fraudguard-kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 604800000   
+    cleanup.policy: delete
