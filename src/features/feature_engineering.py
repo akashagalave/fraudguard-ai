@@ -1,8 +1,15 @@
 import pandas as pd
 import numpy as np
 import logging
-import mlflow
 from typing import Dict, Optional
+
+# ============================
+# OPTIONAL MLFLOW (IMPORTANT)
+# ============================
+try:
+    import mlflow
+except ImportError:
+    mlflow = None
 
 logger = logging.getLogger("feature_engineering")
 logger.setLevel(logging.INFO)
@@ -14,6 +21,7 @@ if not logger.handlers:
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
 
 def tier1_features(
     df: pd.DataFrame,
@@ -150,7 +158,6 @@ def build_features(
         df = tier2_features(df)
         df = apply_card_stats(df, card_stats)
 
-
     df = df.drop(columns=["cc_num", "merchant", "category"], errors="ignore")
 
     for col in df.columns:
@@ -159,7 +166,8 @@ def build_features(
 
     df = df.apply(pd.to_numeric, errors="coerce").fillna(0)
 
-    if log_to_mlflow and mlflow.active_run():
+    # ✅ SAFE MLflow logging
+    if log_to_mlflow and mlflow and mlflow.active_run():
         mlflow.log_param("feature_version", feature_version)
 
     return df, artifacts
