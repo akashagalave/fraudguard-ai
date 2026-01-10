@@ -18,7 +18,6 @@ import pandas as pd
 import shap
 from confluent_kafka import Consumer
 
-# 🔑 Reuse training preprocessing
 from src.features.feature_engineering import build_features
 
 logging.basicConfig(level=logging.INFO)
@@ -35,25 +34,34 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv(
 KAFKA_TOPIC = "fraud-events"
 KAFKA_GROUP_ID = "shap-worker-group"
 
-MODEL_PATH = "/app/model.pkl"
-FEATURE_COLUMNS_PATH = "/app/feature_columns.json"
-ARTIFACTS_PATH = "/app/models/fraudguard_lightgbm"
+MODEL_DIR = "/app/models/fraudguard_lightgbm"
+MODEL_PATH = f"{MODEL_DIR}/model.pkl"
+FEATURE_COLUMNS_PATH = f"{MODEL_DIR}/feature_columns.json"
+FEATURE_ARTIFACTS_PATH = f"{MODEL_DIR}/feature_artifacts.pkl"
 
 TOP_K = 5
 
 # ============================
-# Load Model & SHAP Explainer
+# Load model & artifacts ONCE
 # ============================
-logger.info("📥 Loading model and SHAP explainer...")
+logger.info("📥 Loading model, features & SHAP explainer...")
 
 model = joblib.load(MODEL_PATH)
 
 with open(FEATURE_COLUMNS_PATH) as f:
     feature_columns: List[str] = json.load(f)
 
+# 🔥 Load FEATURE artifacts (this fixes your error)
+feature_artifacts = None
+if os.path.exists(FEATURE_ARTIFACTS_PATH):
+    feature_artifacts = joblib.load(FEATURE_ARTIFACTS_PATH)
+    logger.info("✅ Feature artifacts loaded")
+else:
+    logger.warning("⚠️ Feature artifacts not found — using defaults")
+
 explainer = shap.TreeExplainer(model)
 
-logger.info("✅ Model & SHAP explainer loaded")
+logger.info("✅ Model & SHAP explainer ready")
 
 # ============================
 # Kafka Consumer
@@ -71,26 +79,19 @@ def create_consumer() -> Consumer:
 # SHAP Logic
 # ============================
 def compute_shap(features: Dict[str, Any]) -> List[Dict[str, float]]:
-    """
-    Compute SHAP values using the SAME preprocessing as training.
-    """
-
     raw_df = pd.DataFrame([features])
 
-    # 🔥 Reuse training preprocessing
+    # ✅ Correct: pass FEATURE ARTIFACTS (dict)
     features_df, _ = build_features(
         raw_df,
         mode="test",
-        artifacts=ARTIFACTS_PATH
+        artifacts=feature_artifacts
     )
 
-    # 🔒 Force feature alignment
     features_df = features_df.reindex(columns=feature_columns, fill_value=0.0)
 
     shap_values = explainer.shap_values(features_df)
-
-    # Fraud class = index 1
-    values = shap_values[1][0]
+    values = shap_values[1][0]  # fraud class
 
     shap_pairs = list(zip(feature_columns, values))
     shap_pairs.sort(key=lambda x: abs(x[1]), reverse=True)
@@ -101,7 +102,7 @@ def compute_shap(features: Dict[str, Any]) -> List[Dict[str, float]]:
     ]
 
 # ============================
-# Main Loop
+# Main loop
 # ============================
 def main():
     logger.info("🚀 SHAP Worker starting...")

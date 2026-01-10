@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+import joblib
 from typing import Dict, Optional
 
 # ============================
@@ -150,6 +151,14 @@ def build_features(
             "merchant_txn_count": merchant_stats,
             "card_stats": card_stats
         }
+
+        # ✅ REQUIRED LINE (SAVE FEATURE ARTIFACTS)
+        joblib.dump(
+            artifacts,
+            "models/fraudguard_lightgbm/feature_artifacts.pkl"
+        )
+        logger.info("✅ Feature artifacts saved")
+
     else:
         merchant_stats = artifacts.get("merchant_txn_count") if artifacts else None
         card_stats = artifacts.get("card_stats") if artifacts else None
