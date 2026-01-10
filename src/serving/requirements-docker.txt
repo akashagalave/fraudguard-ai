@@ -10,5 +10,6 @@ mlflow
 dagshub
 prometheus-client==0.20.0
 redis
+confluent-kafka
 
 
