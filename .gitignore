@@ -98,6 +98,12 @@ target/
 !data/
 !data/**/
 
+# Secrets
+rclone.conf
+decoded-rclone.conf
+encoded.txt
+*.env
+
 # Allow DVC files
 !data/**/*.dvc
 !data/**/*.dvc.lock
