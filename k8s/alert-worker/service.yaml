@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraudguard-alert-worker-svc
+  namespace: fraudguard
+  labels:
+    app: fraudguard-alert-worker
+spec:
+  selector:
+    app: fraudguard-alert-worker
+  ports:
+    - name: metrics
+      port: 8001
+      targetPort: 8001

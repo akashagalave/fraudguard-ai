@@ -4,6 +4,7 @@ import time
 import os
 import requests
 import pandas as pd
+from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
@@ -14,7 +15,6 @@ from src.serving.redis_client import init_redis
 from src.features.feature_engineering import build_features
 from src.serving.kafka_producer import (
     init_kafka_producer,
-    build_fraud_event,
     send_fraud_event,
 )
 
@@ -36,6 +36,7 @@ SELDON_URL = os.getenv(
 )
 
 FRAUD_THRESHOLD = 0.3
+MODEL_VERSION = "lightgbm-v1"
 feature_columns: list[str] | None = None
 
 # ============================
@@ -114,7 +115,6 @@ async def predict(request: PredictionRequest):
 
         seldon_response = resp.json()
 
-        # Parse Seldon output
         if "jsonData" in seldon_response:
             prob = seldon_response["jsonData"]["data"]["ndarray"][0]
         elif "data" in seldon_response:
@@ -129,22 +129,23 @@ async def predict(request: PredictionRequest):
         if is_fraud:
             FRAUD_PREDICTIONS_TOTAL.inc()
 
-            event = build_fraud_event(
-                transaction_id=request.transaction_id,
-                fraud_probability=prob,
-                risk_score=risk_score,
-                model_version="lightgbm-v1",
-                features=request.features,
-            )
+            event = {
+                "event_type": "FRAUD_DETECTED",
+                "transaction_id": request.transaction_id,
+                "fraud_probability": prob,
+                "risk_score": risk_score,
+                "model_version": MODEL_VERSION,
+                "timestamp": datetime.utcnow().isoformat(),
+                "features": request.features,
+            }
 
-            # 🔥 Fire-and-forget Kafka
             send_fraud_event(event)
 
         return {
             "fraud_probability": round(prob, 6),
             "risk_score": risk_score,
             "is_fraud": is_fraud,
-            "model_version": "lightgbm-v1",
+            "model_version": MODEL_VERSION,
             "top_reasons": None,
             "human_explanations": None,
         }

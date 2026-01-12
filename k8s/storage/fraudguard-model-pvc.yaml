@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fraudguard-model-pvc
+  namespace: fraudguard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp2-immediate
+  resources:
+    requests:
+      storage: 5Gi

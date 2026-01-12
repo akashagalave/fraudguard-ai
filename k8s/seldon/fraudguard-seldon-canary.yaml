@@ -1,0 +1,48 @@
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: fraudguard-model
+  namespace: fraudguard
+spec:
+  protocol: kfserving
+
+  predictors:
+    - name: stable
+      replicas: 1
+      traffic: 90
+      graph:
+        name: classifier
+        type: MODEL
+        implementation: CUSTOM
+        modelUri: dummy              # ✅ REQUIRED (validation only)
+      componentSpecs:
+        - spec:
+            containers:
+              - name: classifier
+                image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-model:v1
+                imagePullPolicy: Always
+                ports:
+                  - name: http
+                    containerPort: 9000
+                  - name: grpc
+                    containerPort: 9500
+
+    - name: canary
+      replicas: 1
+      traffic: 10
+      graph:
+        name: classifier
+        type: MODEL
+        implementation: CUSTOM
+        modelUri: dummy              # ✅ REQUIRED
+      componentSpecs:
+        - spec:
+            containers:
+              - name: classifier
+                image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-model:v2
+                imagePullPolicy: Always
+                ports:
+                  - name: http
+                    containerPort: 9000
+                  - name: grpc
+                    containerPort: 9500

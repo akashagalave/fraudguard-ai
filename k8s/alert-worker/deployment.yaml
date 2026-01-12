@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraudguard-alert-worker
+  namespace: fraudguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraudguard-alert-worker
+  template:
+    metadata:
+      labels:
+        app: fraudguard-alert-worker
+    spec:
+      containers:
+        - name: alert-worker
+          image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-alert-worker:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"

@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fraudguard-load-generator
+  namespace: fraudguard
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load-generator
+          image: python:3.10-slim
+          command: ["bash", "-c"]
+          args:
+            - |
+              pip install --no-cache-dir requests && \
+              python - << 'EOF'
+              import requests, time, uuid, random
+
+              URL = "http://fraudguard-fastapi-svc/predict"
+
+              while True:
+                  txn_id = f"txn_load_{uuid.uuid4().hex[:12]}"
+
+                  payload = {
+                      "transaction_id": txn_id,
+                      "features": {
+                          "trans_date_trans_time": "2026-01-03 02:45:00",
+                          "cc_num": "1234567890123456",
+                          "merchant": random.choice([
+                              "amazon", "flipkart", "myntra", "fraud_test_merchant"
+                          ]),
+                          "category": "shopping_net",
+                          "amt": random.choice([50, 120, 500, 3000, 15000, 95000]),
+                          "gender": "M",
+                          "lat": 19.076,
+                          "long": 72.8777,
+                          "merch_lat": 28.7041,
+                          "merch_long": 77.1025,
+                          "city_pop": 1500000,
+                          "job": "Engineer",
+                          "dob": "1999-01-01"
+                      }
+                  }
+
+                  try:
+                      r = requests.post(URL, json=payload, timeout=3)
+                      print(f"{txn_id} → {r.status_code}")
+                  except Exception as e:
+                      print("ERROR:", e)
+
+                  time.sleep(0.4)  # ~2.5 RPS
+              EOF

@@ -16,4 +16,5 @@ rules:
       name:
         matches: "^fraud_latency_p95$"
         as: "fraud_latency_p95"
-      metricsQuery: 'fraud_latency_p95{<<.LabelMatchers>>}'
+      metricsQuery: >
+        fraud_latency_p95{<<.LabelMatchers>>}

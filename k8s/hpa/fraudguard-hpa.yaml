@@ -8,13 +8,16 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: fraudguard-fastapi
-  minReplicas: 2
+
+  # 🔒 SAFE DEFAULTS (no sudden scaling)
+  minReplicas: 1
   maxReplicas: 10
+
   metrics:
-  - type: Pods
-    pods:
-      metric:
-        name: fraud_latency_p95
-      target:
-        type: AverageValue
-        averageValue: "500m"   # 0.5 seconds
+    - type: External
+      external:
+        metric:
+          name: fraud_latency_p95
+        target:
+          type: Value
+          value: "200m"   # 200ms
