@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraudguard-fastapi-stable
+  namespace: fraudguard
+spec:
+  selector:
+    app: fraudguard-fastapi
+    version: stable
+  ports:
+  - port: 80
+    targetPort: 8000

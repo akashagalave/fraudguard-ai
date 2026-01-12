@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraudguard-fastapi-canary
+  namespace: fraudguard
+spec:
+  selector:
+    app: fraudguard-fastapi
+    version: canary
+  ports:
+  - port: 80
+    targetPort: 8000

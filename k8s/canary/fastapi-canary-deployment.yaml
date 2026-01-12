@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraudguard-fastapi-canary
+  namespace: fraudguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraudguard-fastapi
+      version: canary
+  template:
+    metadata:
+      labels:
+        app: fraudguard-fastapi
+        version: canary
+    spec:
+      containers:
+      - name: fastapi
+        image: 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: MODEL_VERSION
+          value: "canary"

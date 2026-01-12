@@ -19,3 +19,11 @@ spec:
                 )
               )
             )
+
+    - name: fraudguard-model-metrics
+      rules:
+        - record: fraudguard:model_accuracy
+          expr: |
+            sum(rate(fraud_correct_predictions_total[5m]))
+            /
+            sum(rate(fraud_predictions_total[5m]))

@@ -7,17 +7,11 @@ metadata:
     release: monitoring
 spec:
   groups:
-  - name: fraudguard.rules
+  - name: fraudguard-operational
     rules:
 
     - alert: FraudGuardHighLatency
-      expr: |
-        histogram_quantile(
-          0.95,
-          sum by (le) (
-            rate(fraud_inference_latency_seconds_bucket[5m])
-          )
-        ) > 1
+      expr: fraud_latency_p95 > 1
       for: 2m
       labels:
         severity: warning
@@ -26,8 +20,7 @@ spec:
         description: "FraudGuard p95 latency > 1s for 2 minutes"
 
     - alert: FraudGuardFraudSpike
-      expr: |
-        rate(fraud_alerts_sent_total[5m]) > 0.5
+      expr: rate(fraud_alerts_sent_total[5m]) > 0.5
       for: 1m
       labels:
         severity: critical
@@ -36,8 +29,7 @@ spec:
         description: "Fraud alerts > 30 per minute"
 
     - alert: FraudGuardNoTraffic
-      expr: |
-        rate(fraud_requests_total[5m]) == 0
+      expr: rate(fraud_requests_total[5m]) == 0
       for: 2m
       labels:
         severity: critical

@@ -2,8 +2,18 @@ name: FraudGuard Model Training
 
 on:
   workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why retraining was triggered"
+        required: false
+        default: "manual"
+      alert:
+        description: "Alert name"
+        required: false
+        default: "none"
+
   schedule:
-    - cron: "0 2 * * 0"   # Weekly Sunday 2 AM UTC
+    - cron: "0 2 * * 0"   # weekly safety retrain
 
 jobs:
   train:
@@ -12,24 +22,48 @@ jobs:
     env:
       AWS_REGION: us-east-1
       DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-      MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+      MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
+      MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+
+      # retrain protection
+      COOLDOWN_HOURS: 24
 
     steps:
-      # 1️⃣ Checkout code
+      # =========================
+      # 1️⃣ Checkout
+      # =========================
       - uses: actions/checkout@v4
 
-      # 2️⃣ Setup Python
+      # =========================
+      # 2️⃣ Python
+      # =========================
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install dependencies
+      # =========================
+      # 3️⃣ Log trigger context
+      # =========================
+      - name: Log retrain context
+        run: |
+          echo "🔁 Retraining trigger reason: ${{ github.event.inputs.reason }}"
+          echo "🚨 Alert: ${{ github.event.inputs.alert }}"
+          echo "🕒 Event type: ${{ github.event_name }}"
+
+      # =========================
+      # 4️⃣ Install dependencies
+      # =========================
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r dev-requirements.txt
           pip install -e .
+          pip install dvc[s3] mlflow dagshub
 
-      # 4️⃣ Configure AWS credentials
+      # =========================
+      # 5️⃣ AWS
+      # =========================
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -37,21 +71,64 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 5️⃣ Pull external RAW data from S3 (CRITICAL STEP)
-      - name: Fetch external raw data
+      # =========================
+      # 6️⃣ Data fetch
+      # =========================
+      - name: Fetch external data
         run: |
-          mkdir -p data/external
           aws s3 cp s3://fraudguard-raw-data/data/external/ data/external/ --recursive
-          ls -lh data/external
 
-      # 6️⃣ Pull DVC tracked artifacts
       - name: DVC Pull
         run: dvc pull
 
-      # 7️⃣ Run full training pipeline
-      - name: Train Model (DVC Repro)
-        run: dvc repro
+      # =========================
+      # 7️⃣ Drift detection (HARD GATE)
+      # =========================
+      - name: Detect data drift
+        run: |
+          python scripts/drift_detector.py
 
-      # 8️⃣ Push updated artifacts to DVC remote
-      - name: DVC Push
+          if [ -f retrain.flag ]; then
+            echo "🚨 Drift detected — retraining allowed"
+          else
+            if [ "${{ github.event_name }}" = "schedule" ]; then
+              echo "🗓️ Scheduled retrain — proceeding anyway"
+            else
+              echo "✅ No drift & not scheduled — skipping retrain"
+              exit 0
+            fi
+          fi
+
+      # =========================
+      # 8️⃣ Cooldown protection
+      # =========================
+      - name: Retrain cooldown check
+        run: |
+          LAST_RUN_FILE=".last_retrain"
+
+          if [ -f "$LAST_RUN_FILE" ]; then
+            LAST_RUN=$(cat $LAST_RUN_FILE)
+            NOW=$(date +%s)
+            DIFF_HOURS=$(( (NOW - LAST_RUN) / 3600 ))
+
+            if [ "$DIFF_HOURS" -lt "$COOLDOWN_HOURS" ]; then
+              echo "⏳ Cooldown active ($DIFF_HOURS h < $COOLDOWN_HOURS h). Exiting."
+              exit 0
+            fi
+          fi
+
+          date +%s > $LAST_RUN_FILE
+
+      # =========================
+      # 9️⃣ Retrain
+      # =========================
+      - name: Retrain model
+        run: |
+          echo "🔥 Starting model retraining"
+          dvc repro
+
+      # =========================
+      # 🔟 Push artifacts
+      # =========================
+      - name: Push artifacts
         run: dvc push

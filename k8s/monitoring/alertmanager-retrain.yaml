@@ -1,0 +1,29 @@
+route:
+  receiver: default
+  routes:
+  - matchers:
+    - retrain="true"
+    receiver: github-retrain
+
+receivers:
+- name: default
+
+- name: github-retrain
+  webhook_configs:
+  - url: "https://api.github.com/repos/akashagalave/fraudguard-ai/actions/workflows/train_model.yml/dispatches"
+    http_config:
+      authorization:
+        type: Bearer
+        credentials: "<GH_RETRAIN_TOKEN>"
+      headers:
+        Accept: application/vnd.github+json
+        Content-Type: application/json
+    send_resolved: false
+    body: |
+      {
+        "ref": "main",
+        "inputs": {
+          "reason": "accuracy_drop",
+          "alert": "{{ .CommonAnnotations.summary }}"
+        }
+      }

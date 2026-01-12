@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraudguard-accuracy-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+  - name: fraudguard-accuracy
+    rules:
+    - alert: FraudGuardModelAccuracyDrop
+      expr: fraudguard:model_accuracy < 0.85
+      for: 10m
+      labels:
+        severity: critical
+        retrain: "true"
+      annotations:
+        summary: "FraudGuard model accuracy dropped"
+        description: "Accuracy below 85% for 10 minutes. Trigger retraining."

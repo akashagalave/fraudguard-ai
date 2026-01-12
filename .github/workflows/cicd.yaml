@@ -1,4 +1,4 @@
-name: FraudGuard CI-CD
+name: FraudGuard Full CI-CD Pipeline
 
 on:
   push:
@@ -6,49 +6,57 @@ on:
       - main
       - develop
 
+  workflow_dispatch:
+
+  workflow_run:
+    workflows: ["FraudGuard Model Training"]
+    types:
+      - completed
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 199964507152.dkr.ecr.us-east-1.amazonaws.com
+  CLUSTER_NAME: fraudguard-eks
+  NAMESPACE: fraudguard
+
+  # MLflow / DAGsHub
+  MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
+  MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
+  MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+  DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      AWS_REGION: us-east-1
-
-      # 🔥 DAGsHub / MLflow AUTH
-      MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
-      MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
-      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-
-      # 🔥 Required for dagshub.init()
-      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-
     steps:
-      # ============================
+      # =========================
       # 1️⃣ Checkout
-      # ============================
+      # =========================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ============================
-      # 2️⃣ Python setup
-      # ============================
+      # =========================
+      # 2️⃣ Python Setup
+      # =========================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ============================
-      # 3️⃣ Install dependencies
-      # ============================
+      # =========================
+      # 3️⃣ Install Dependencies
+      # =========================
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r dev-requirements.txt
           pip install -e .
-          pip install mlflow dagshub
+          pip install mlflow dagshub dvc[s3]
 
-      # ============================
-      # 4️⃣ AWS credentials
-      # ============================
+      # =========================
+      # 4️⃣ AWS Credentials
+      # =========================
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -56,53 +64,100 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ============================
-      # 5️⃣ MODEL LIFECYCLE (CI CORE)
-      # ============================
-      - name: DVC Pull
+      # =========================
+      # 5️⃣ Model Lifecycle (CI)
+      # =========================
+      - name: DVC Pull Artifacts
         run: dvc pull
 
-      - name: Validate model performance
+      - name: Validate Model Quality
         run: python scripts/model_quality_check.py
 
-      - name: Promote model to Production
+      - name: Promote Model to Production
         run: python scripts/promote_model.py
 
-      # ============================
-      # 6️⃣ MLflow → S3 (Model Store)
-      # ============================
-      - name: Download Production model from MLflow
-        run: |
-          mlflow artifacts download \
-            --artifact-uri models:/fraudguard_lightgbm/Production \
-            --dst-path ./mlflow_model
-
-      - name: Sync model to S3
-        run: |
-          aws s3 sync ./mlflow_model \
-            s3://fraudguard-models/production \
-            --delete
-
-      # ============================
-      # 7️⃣ APPLICATION IMAGES
-      # ============================
+      # =========================
+      # 6️⃣ Login to ECR
+      # =========================
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push FastAPI image
+      # =========================
+      # 7️⃣ Build & Push Images
+      # =========================
+      - name: Build & Push FastAPI
         run: |
-          docker build -t fraudguard-fastapi:latest -f src/serving/Dockerfile .
-          docker tag fraudguard-fastapi:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
-          docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-fastapi:latest
+          docker build -t fraudguard-fastapi -f src/serving/Dockerfile .
+          docker tag fraudguard-fastapi $ECR_REGISTRY/fraudguard-fastapi:latest
+          docker push $ECR_REGISTRY/fraudguard-fastapi:latest
 
       - name: Build & Push Kafka Producer
         run: |
-          docker build -t fraudguard-producer:latest -f services/producer/Dockerfile .
-          docker tag fraudguard-producer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
-          docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-producer:latest
+          docker build -t fraudguard-producer -f services/producer/Dockerfile .
+          docker tag fraudguard-producer $ECR_REGISTRY/fraudguard-producer:latest
+          docker push $ECR_REGISTRY/fraudguard-producer:latest
 
       - name: Build & Push Kafka Consumer
         run: |
-          docker build -t fraudguard-consumer:latest -f services/consumer/Dockerfile .
-          docker tag fraudguard-consumer:latest 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-consumer:latest
-          docker push 199964507152.dkr.ecr.us-east-1.amazonaws.com/fraudguard-consumer:latest
+          docker build -t fraudguard-consumer -f services/consumer/Dockerfile .
+          docker tag fraudguard-consumer $ECR_REGISTRY/fraudguard-consumer:latest
+          docker push $ECR_REGISTRY/fraudguard-consumer:latest
+
+      # =========================
+      # 8️⃣ Configure kubectl
+      # =========================
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $CLUSTER_NAME
+
+      # =========================
+      # 9️⃣ Infrastructure
+      # =========================
+      - name: Deploy Redis
+        run: kubectl apply -f redis.yaml
+
+      - name: Deploy Kafka
+        run: |
+          kubectl apply -f k8s/kafka/kafka-nodepool.yaml
+          kubectl apply -f k8s/kafka/kafka-cluster.yaml
+          kubectl apply -f k8s/kafka/kafka-topic.yaml
+          kubectl apply -f k8s/kafka/kafka-topic-alerts.yaml
+
+      # =========================
+      # 🔟 API Layer (STABLE ONLY)
+      # =========================
+      - name: Deploy Stable FastAPI
+        run: |
+          kubectl apply -f k8s/canary/fastapi-stable-deployment.yaml
+          kubectl apply -f k8s/canary/fastapi-stable-service.yaml
+          kubectl apply -f k8s/canary/ingress-stable.yaml
+
+      # =========================
+      # 1️⃣1️⃣ Async Workers
+      # =========================
+      - name: Deploy Workers
+        run: |
+          kubectl apply -f k8s/alert-worker/deployment.yaml
+          kubectl apply -f k8s/alert-worker/service.yaml
+          kubectl apply -f k8s/shap-worker/deployment.yaml
+
+      # =========================
+      # 1️⃣2️⃣ Monitoring
+      # =========================
+      - name: Apply ServiceMonitors
+        run: |
+          kubectl apply -f k8s/monitoring/alert-worker-servicemonitor.yaml
+          kubectl apply -f servicemonitor.yaml
+
+      # =========================
+      # 1️⃣3️⃣ Canary (MANUAL ONLY)
+      # =========================
+      - name: Canary Deployment (Manual Approval)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "🚦 Deploying Canary (A/B testing – 10% traffic)"
+          kubectl apply -f k8s/canary/fastapi-canary-deployment.yaml
+          kubectl apply -f k8s/canary/fastapi-canary-service.yaml
+          kubectl apply -f k8s/canary/ingress-canary.yaml
