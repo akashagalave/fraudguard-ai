@@ -71,7 +71,7 @@ jobs:
 
       - name: Build & Push FastAPI
         run: |
-          docker build -t fraudguard-fastapi -f src/serving/Dockerfile .
+          docker build -t fraudguard-fastapi -f serving/Dockerfile .
           docker tag fraudguard-fastapi $ECR_REGISTRY/fraudguard-fastapi:latest
           docker push $ECR_REGISTRY/fraudguard-fastapi:latest
 
