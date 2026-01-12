@@ -1,9 +1,9 @@
-# scripts/model_quality_check.py
+
 import os
 import json
 import sys
 
-# Try to find metrics file in standard locations
+
 METRICS_FILE = "reports/evaluation/metrics.json"
 if not os.path.exists(METRICS_FILE):
     METRICS_FILE = "metrics.json"

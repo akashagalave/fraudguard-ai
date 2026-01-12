@@ -6,26 +6,19 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("drift-detection")
 
-# ============================
-# Config
-# ============================
-DRIFT_THRESHOLD = 0.05  # p-value threshold
+
+DRIFT_THRESHOLD = 0.05  
 MIN_SAMPLES = 100
 
-# ============================
-# Drift Detection
-# ============================
+
 def detect_drift(
     reference_data: pd.DataFrame,
     production_data: pd.DataFrame,
     feature_columns: list[str],
 ):
-    """
-    Uses Kolmogorov–Smirnov test for numerical drift detection
-    """
 
     if len(production_data) < MIN_SAMPLES:
-        logger.warning("⚠️ Not enough production samples for drift detection")
+        logger.warning(" Not enough production samples for drift detection")
         return False, {}
 
     drifted_features = {}
@@ -51,8 +44,8 @@ def detect_drift(
     drift_detected = len(drifted_features) > 0
 
     if drift_detected:
-        logger.warning("🚨 DATA DRIFT DETECTED")
+        logger.warning(" DATA DRIFT DETECTED")
     else:
-        logger.info("✅ No significant drift detected")
+        logger.info("No significant drift detected")
 
     return drift_detected, drifted_features

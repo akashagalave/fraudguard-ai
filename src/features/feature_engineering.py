@@ -4,9 +4,6 @@ import logging
 import joblib
 from typing import Dict, Optional
 
-# ============================
-# OPTIONAL MLFLOW (IMPORTANT)
-# ============================
 try:
     import mlflow
 except ImportError:
@@ -152,7 +149,7 @@ def build_features(
             "card_stats": card_stats
         }
 
-        # ✅ REQUIRED LINE (SAVE FEATURE ARTIFACTS)
+     
         joblib.dump(
             artifacts,
             "models/fraudguard_lightgbm/feature_artifacts.pkl"
@@ -175,7 +172,7 @@ def build_features(
 
     df = df.apply(pd.to_numeric, errors="coerce").fillna(0)
 
-    # ✅ SAFE MLflow logging
+ 
     if log_to_mlflow and mlflow and mlflow.active_run():
         mlflow.log_param("feature_version", feature_version)
 

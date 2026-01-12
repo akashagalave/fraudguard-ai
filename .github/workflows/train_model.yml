@@ -13,7 +13,7 @@ on:
         default: "none"
 
   schedule:
-    - cron: "0 2 * * 0"   # weekly safety retrain
+    - cron: "0 2 * * 0"  
 
 jobs:
   train:
@@ -26,34 +26,25 @@ jobs:
       MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
       MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
 
-      # retrain protection
+   
       COOLDOWN_HOURS: 24
 
     steps:
-      # =========================
-      # 1️⃣ Checkout
-      # =========================
+
       - uses: actions/checkout@v4
 
-      # =========================
-      # 2️⃣ Python
-      # =========================
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # =========================
-      # 3️⃣ Log trigger context
-      # =========================
+
       - name: Log retrain context
         run: |
-          echo "🔁 Retraining trigger reason: ${{ github.event.inputs.reason }}"
-          echo "🚨 Alert: ${{ github.event.inputs.alert }}"
-          echo "🕒 Event type: ${{ github.event_name }}"
+          echo " Retraining trigger reason: ${{ github.event.inputs.reason }}"
+          echo " Alert: ${{ github.event.inputs.alert }}"
+          echo " Event type: ${{ github.event_name }}"
 
-      # =========================
-      # 4️⃣ Install dependencies
-      # =========================
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -61,9 +52,7 @@ jobs:
           pip install -e .
           pip install dvc[s3] mlflow dagshub
 
-      # =========================
-      # 5️⃣ AWS
-      # =========================
+
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -71,9 +60,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # =========================
-      # 6️⃣ Data fetch
-      # =========================
+
       - name: Fetch external data
         run: |
           aws s3 cp s3://fraudguard-raw-data/data/external/ data/external/ --recursive
@@ -81,27 +68,23 @@ jobs:
       - name: DVC Pull
         run: dvc pull
 
-      # =========================
-      # 7️⃣ Drift detection (HARD GATE)
-      # =========================
+
       - name: Detect data drift
         run: |
           python scripts/drift_detector.py
 
           if [ -f retrain.flag ]; then
-            echo "🚨 Drift detected — retraining allowed"
+            echo " Drift detected — retraining allowed"
           else
             if [ "${{ github.event_name }}" = "schedule" ]; then
-              echo "🗓️ Scheduled retrain — proceeding anyway"
+              echo " Scheduled retrain — proceeding anyway"
             else
-              echo "✅ No drift & not scheduled — skipping retrain"
+              echo " No drift & not scheduled — skipping retrain"
               exit 0
             fi
           fi
 
-      # =========================
-      # 8️⃣ Cooldown protection
-      # =========================
+
       - name: Retrain cooldown check
         run: |
           LAST_RUN_FILE=".last_retrain"
@@ -112,23 +95,19 @@ jobs:
             DIFF_HOURS=$(( (NOW - LAST_RUN) / 3600 ))
 
             if [ "$DIFF_HOURS" -lt "$COOLDOWN_HOURS" ]; then
-              echo "⏳ Cooldown active ($DIFF_HOURS h < $COOLDOWN_HOURS h). Exiting."
+              echo " Cooldown active ($DIFF_HOURS h < $COOLDOWN_HOURS h). Exiting."
               exit 0
             fi
           fi
 
           date +%s > $LAST_RUN_FILE
 
-      # =========================
-      # 9️⃣ Retrain
-      # =========================
+
       - name: Retrain model
         run: |
-          echo "🔥 Starting model retraining"
+          echo "Starting model retraining"
           dvc repro
 
-      # =========================
-      # 🔟 Push artifacts
-      # =========================
+
       - name: Push artifacts
         run: dvc push

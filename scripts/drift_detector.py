@@ -17,9 +17,6 @@ def psi(expected, actual, bins=10):
         np.log((expected_perc + 1e-6) / (actual_perc + 1e-6))
     )
 
-# =========================
-# Load datasets
-# =========================
 ref = pd.read_csv("data/processed/train.csv")
 live = pd.read_csv("data/processed/live.csv")
 
@@ -31,16 +28,14 @@ for col in ref.columns:
 
 max_drift = max(drift_scores.values())
 
-print(f"📊 Max PSI drift: {max_drift}")
+print(f" Max PSI drift: {max_drift}")
 
-# =========================
-# Drift decision
-# =========================
+
 if max_drift > DRIFT_THRESHOLD:
-    print("🚨 DRIFT DETECTED — retraining required")
+    print(" DRIFT DETECTED — retraining required")
     with open(RETRAIN_FLAG_PATH, "w") as f:
         f.write("true")
 else:
-    print("✅ No significant drift")
+    print(" No significant drift")
     if os.path.exists(RETRAIN_FLAG_PATH):
         os.remove(RETRAIN_FLAG_PATH)
