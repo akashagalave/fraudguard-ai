@@ -16,7 +16,7 @@
 It combines **real-time inference** with an **event-driven architecture** to handle high-throughput transactions while ensuring the model remains accurate through **automated drift detection and retraining**.
 
 ### 🚀 Key Capabilities
-*   ⚡ **Low Latency:** Sub-200ms response time using FastAPI & LightGBM.
+*   ⚡ **Low Latency:** ~25 ms P95 and ~31 ms P99 application latency measured under ~1.2K RPS using FastAPI & LightGBM.
 *   📨 **Async Processing:** Kafka decouples critical inference from heavy tasks (Alerts, SHAP).
 *   👁️ **Full Observability:** Prometheus & Grafana track system health & model drift.
 *   🔄 **Self-Healing:** If accuracy drops below 85%, the system **automatically** triggers a GitHub Action to retrain and redeploy the model without human intervention.
@@ -29,7 +29,7 @@ Modern digital payment systems face:
 
 * Millions of transactions per day
 * Rapidly evolving fraud patterns
-* Strict latency SLAs (**< 200 ms**)
+* Strict latency SLAs (** sub-50 ms application latency for real-time inference**)
 * Continuous model degradation in production
 
 ### Why traditional ML systems fail
@@ -235,7 +235,7 @@ Consumers:
 ### Metrics tracked
 
 * Request throughput
-* P95 and P99 inference latency
+* P95 and P99 application and model inference latency
 * Fraud detection rate
 * Alert generation rate
 * **Production model accuracy**
@@ -250,10 +250,11 @@ Model accuracy is the **primary retraining trigger**.
 
 **Observed performance**
 
-* P95 latency consistently **< 100 ms**
-* P99 latency **< 220 ms** under peak load
-* Stable throughput during load testing
-* No alert pipeline failures
+* Sustained **~1.1–1.2K RPS** through AWS ALB using Locust
+* Application **P95 latency < 25 ms**
+* Application **P99 latency < 31 ms**
+* Model inference P95 latency ~24 ms
+* Stable throughput with no alert pipeline failures
 
 ---
 
@@ -316,5 +317,6 @@ model_accuracy < 85 percent for 10 minutes
 > FraudGuard is a **production-grade, self-healing fraud detection platform** that continuously monitors model accuracy and automatically retrains and redeploys models, ensuring **low latency**, **high accuracy**, and **operational reliability**.
 
 ---
+
 
 
