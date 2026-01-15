@@ -1,5 +1,7 @@
 [core]
-    remote = s3remote
+    remote = fraudguard-storage
 ['remote "s3remote"']
     url = s3://fraudguard-dvc-storage
     region = us-east-1
+['remote "fraudguard-storage"']
+    url = s3://fraudguard-dvc-storage

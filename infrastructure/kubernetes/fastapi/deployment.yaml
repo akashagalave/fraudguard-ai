@@ -22,30 +22,27 @@ spec:
             - containerPort: 8000
 
           env:
-            - name: SELDON_URL
-              value: "http://fraudguard-model-default.fraudguard.svc.cluster.local:8000/api/v1.0/predictions"
+            - name: MODEL_VERSION
+              value: "stable"
 
-        
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 8000
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 3
 
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 8000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
 
           resources:
             requests:
-              cpu: "250m"
+              cpu: "500m"
               memory: "512Mi"
             limits:
-              cpu: "500m"
+              cpu: "1000m"
               memory: "1Gi"
