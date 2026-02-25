@@ -1,17 +1,12 @@
 name: FraudGuard Full CI-CD Pipeline
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-
-  workflow_dispatch:
-
   workflow_run:
     workflows: ["FraudGuard Model Training"]
     types:
       - completed
+
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -19,27 +14,17 @@ env:
   CLUSTER_NAME: fraudguard-eks
   NAMESPACE: fraudguard
 
-
-  MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
-  MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
-  MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-  DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-
 jobs:
   deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
- 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
 
       - name: Install dependencies
         run: |
@@ -47,13 +32,13 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
           pip install mlflow dagshub dvc[s3]
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
 
       - name: DVC Pull Artifacts
         run: dvc pull
@@ -64,29 +49,24 @@ jobs:
       - name: Promote Model to Production
         run: python scripts/promote_model.py
 
-
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-
-      - name: Build & Push FastAPI
+      - name: Build & Push Images
         run: |
-          docker build -t fraudguard-fastapi -f serving/Dockerfile .
-          docker tag fraudguard-fastapi $ECR_REGISTRY/fraudguard-fastapi:latest
-          docker push $ECR_REGISTRY/fraudguard-fastapi:latest
+          TAG=${{ github.sha }}
 
-      - name: Build & Push Kafka Producer
-        run: |
-          docker build -t fraudguard-producer -f services/producer/Dockerfile .
-          docker tag fraudguard-producer $ECR_REGISTRY/fraudguard-producer:latest
-          docker push $ECR_REGISTRY/fraudguard-producer:latest
+          docker build -t fastapi -f serving/Dockerfile .
+          docker tag fastapi $ECR_REGISTRY/fraudguard-fastapi:$TAG
+          docker push $ECR_REGISTRY/fraudguard-fastapi:$TAG
 
-      - name: Build & Push Kafka Consumer
-        run: |
-          docker build -t fraudguard-consumer -f services/consumer/Dockerfile .
-          docker tag fraudguard-consumer $ECR_REGISTRY/fraudguard-consumer:latest
-          docker push $ECR_REGISTRY/fraudguard-consumer:latest
+          docker build -t producer -f services/producer/Dockerfile .
+          docker tag producer $ECR_REGISTRY/fraudguard-producer:$TAG
+          docker push $ECR_REGISTRY/fraudguard-producer:$TAG
 
+          docker build -t consumer -f services/consumer/Dockerfile .
+          docker tag consumer $ECR_REGISTRY/fraudguard-consumer:$TAG
+          docker push $ECR_REGISTRY/fraudguard-consumer:$TAG
 
       - name: Configure kubectl
         run: |
@@ -94,40 +74,29 @@ jobs:
             --region $AWS_REGION \
             --name $CLUSTER_NAME
 
-
-      - name: Deploy Redis
-        run: kubectl apply -f infrastructure/kubernetes/redis/redis.yaml
-
-      - name: Deploy Kafka
+      - name: Deploy Core Infrastructure
         run: |
-          kubectl apply -f infrastructure/kubernetes/kafka/kafka-nodepool.yaml
-          kubectl apply -f infrastructure/kubernetes/kafka/kafka-cluster.yaml
-          kubectl apply -f infrastructure/kubernetes/kafka/kafka-topic.yaml
-          kubectl apply -f infrastructure/kubernetes/kafka/kafka-topic-alerts.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/redis/
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/kafka/
 
-
-      - name: Deploy Stable FastAPI
+      - name: Deploy Stable Services
         run: |
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-stable-deployment.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-stable-service.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/ingress-stable.yaml
-
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-stable-deployment.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-stable-service.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/ingress-stable.yaml
 
       - name: Deploy Workers
         run: |
-          kubectl apply -f services/alert-worker/deployment.yaml
-          kubectl apply -f services/alert-worker/service.yaml
-          kubectl apply -f services/shap-worker/deployment.yaml
+          kubectl apply -n $NAMESPACE -f services/alert-worker/
+          kubectl apply -n $NAMESPACE -f services/shap-worker/
 
       - name: Apply ServiceMonitors
         run: |
-          kubectl apply -f infrastructure/kubernetes/monitoring/alert-worker-servicemonitor.yaml
-          kubectl apply -f infrastructure/kubernetes/monitoring/servicemonitor.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/monitoring/
 
-      - name: Canary Deployment (Manual Approval)
+      - name: Canary Deployment (Manual)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo " Deploying Canary (A/B testing 10% traffic)"
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-canary-deployment.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-canary-service.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/ingress-canary.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-canary-deployment.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-canary-service.yaml
+          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/ingress-canary.yaml
