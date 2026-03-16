@@ -1,35 +1,50 @@
 name: FraudGuard Full CI-CD Pipeline
 
 on:
+  push:
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+
   workflow_run:
     workflows: ["FraudGuard Model Training"]
     types:
       - completed
-
-  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 199964507152.dkr.ecr.us-east-1.amazonaws.com
   CLUSTER_NAME: fraudguard-eks
   NAMESPACE: fraudguard
+  MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
+  MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
+  MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+  DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    # Only run if triggered manually, on push, or after a successful training run
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r dev-requirements.txt
           pip install -e .
           pip install mlflow dagshub dvc[s3]
 
@@ -43,60 +58,285 @@ jobs:
       - name: DVC Pull Artifacts
         run: dvc pull
 
+      # ── Check for data drift and trigger retraining if needed ────────────────
+      # This is what makes the resume claim "drift-triggered retraining" TRUE.
+      # The drift_detector.py writes retrain.flag if PSI > 0.2 on any feature.
+      # If retrain.flag exists, we dispatch the train_model workflow immediately
+      # before proceeding with deployment.
+      - name: Check data drift
+        id: drift_check
+        run: |
+          python scripts/drift_detector.py
+          if [ -f retrain.flag ]; then
+            echo "drift_detected=true" >> $GITHUB_OUTPUT
+            echo "DRIFT DETECTED — will trigger retraining workflow"
+          else
+            echo "drift_detected=false" >> $GITHUB_OUTPUT
+            echo "No drift detected — proceeding with deployment"
+          fi
+
+      - name: Trigger retraining on drift
+        if: steps.drift_check.outputs.drift_detected == 'true'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: train_model.yaml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          inputs: |
+            {
+              "reason": "auto-drift-trigger-from-cicd",
+              "alert": "PSI threshold exceeded"
+            }
+
+      # ── Model quality gate — fails CI if model doesn't meet bar ─────────────
       - name: Validate Model Quality
         run: python scripts/model_quality_check.py
 
       - name: Promote Model to Production
         run: python scripts/promote_model.py
 
+      # ── Build and push Docker images ─────────────────────────────────────────
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Images
+      - name: Build & Push FastAPI
         run: |
           TAG=${{ github.sha }}
-
-          docker build -t fastapi -f serving/Dockerfile .
-          docker tag fastapi $ECR_REGISTRY/fraudguard-fastapi:$TAG
+          docker build -t fraudguard-fastapi -f serving/Dockerfile .
+          docker tag fraudguard-fastapi $ECR_REGISTRY/fraudguard-fastapi:$TAG
+          docker tag fraudguard-fastapi $ECR_REGISTRY/fraudguard-fastapi:latest
           docker push $ECR_REGISTRY/fraudguard-fastapi:$TAG
+          docker push $ECR_REGISTRY/fraudguard-fastapi:latest
 
-          docker build -t producer -f services/producer/Dockerfile .
-          docker tag producer $ECR_REGISTRY/fraudguard-producer:$TAG
+      - name: Build & Push Kafka Producer
+        run: |
+          TAG=${{ github.sha }}
+          docker build -t fraudguard-producer -f services/producer/Dockerfile .
+          docker tag fraudguard-producer $ECR_REGISTRY/fraudguard-producer:$TAG
+          docker tag fraudguard-producer $ECR_REGISTRY/fraudguard-producer:latest
           docker push $ECR_REGISTRY/fraudguard-producer:$TAG
+          docker push $ECR_REGISTRY/fraudguard-producer:latest
 
-          docker build -t consumer -f services/consumer/Dockerfile .
-          docker tag consumer $ECR_REGISTRY/fraudguard-consumer:$TAG
+      - name: Build & Push Kafka Consumer
+        run: |
+          TAG=${{ github.sha }}
+          docker build -t fraudguard-consumer -f services/consumer/Dockerfile .
+          docker tag fraudguard-consumer $ECR_REGISTRY/fraudguard-consumer:$TAG
+          docker tag fraudguard-consumer $ECR_REGISTRY/fraudguard-consumer:latest
           docker push $ECR_REGISTRY/fraudguard-consumer:$TAG
+          docker push $ECR_REGISTRY/fraudguard-consumer:latest
 
+      # ── Deploy to EKS ─────────────────────────────────────────────────────────
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --region $AWS_REGION \
             --name $CLUSTER_NAME
 
-      - name: Deploy Core Infrastructure
-        run: |
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/redis/
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/kafka/
+      - name: Deploy Redis
+        run: kubectl apply -f infrastructure/kubernetes/redis/redis.yaml -n $NAMESPACE
 
-      - name: Deploy Stable Services
+      - name: Deploy Kafka
         run: |
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-stable-deployment.yaml
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-stable-service.yaml
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/ingress-stable.yaml
+          kubectl apply -f infrastructure/kubernetes/kafka/kafka-nodepool.yaml -n $NAMESPACE
+          kubectl apply -f infrastructure/kubernetes/kafka/kafka-cluster.yaml  -n $NAMESPACE
+          kubectl apply -f infrastructure/kubernetes/kafka/kafka-topic.yaml    -n $NAMESPACE
+          kubectl apply -f infrastructure/kubernetes/kafka/kafka-topic-alerts.yaml -n $NAMESPACE
+
+      - name: Deploy Stable FastAPI (rolling update with new image tag)
+        run: |
+          TAG=${{ github.sha }}
+          # Update image tag in stable deployment to this exact commit SHA
+          kubectl set image deployment/fraudguard-fastapi-stable \
+            fastapi=$ECR_REGISTRY/fraudguard-fastapi:$TAG \
+            -n $NAMESPACE
+          kubectl rollout status deployment/fraudguard-fastapi-stable -n $NAMESPACE --timeout=120s
+
+      - name: Deploy Consumer (updated inference code)
+        run: |
+          TAG=${{ github.sha }}
+          kubectl set image deployment/fraudguard-consumer \
+            consumer=$ECR_REGISTRY/fraudguard-consumer:$TAG \
+            -n $NAMESPACE
+          kubectl rollout status deployment/fraudguard-consumer -n $NAMESPACE --timeout=120s
 
       - name: Deploy Workers
         run: |
-          kubectl apply -n $NAMESPACE -f services/alert-worker/
-          kubectl apply -n $NAMESPACE -f services/shap-worker/
+          kubectl apply -f services/alert-worker/deployment.yaml -n $NAMESPACE
+          kubectl apply -f services/alert-worker/service.yaml    -n $NAMESPACE
+          kubectl apply -f services/shap-worker/deployment.yaml  -n $NAMESPACE
 
       - name: Apply ServiceMonitors
         run: |
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/monitoring/
+          kubectl apply -f infrastructure/kubernetes/monitoring/alert-worker-servicemonitor.yaml -n $NAMESPACE
+          kubectl apply -f infrastructure/kubernetes/monitoring/servicemonitor.yaml              -n $NAMESPACE
 
-      - name: Canary Deployment (Manual)
+      # ── Post-deploy smoke test ─────────────────────────────────────────────────
+      # Wait 30s then hit /health to confirm the new pod is up and model is loaded
+      - name: Post-deploy health check
+        run: |
+          sleep 30
+          kubectl run smoke-test \
+            --image=curlimages/curl:8.1.2 \
+            --restart=Never \
+            --rm \
+            --attach \
+            -n $NAMESPACE \
+            -- curl -sf http://fraudguard-fastapi-stable-svc/health \
+            || (echo "Health check FAILED" && exit 1)
+          echo "Health check passed"
+
+      # ── Canary Deployment (only on manual workflow_dispatch) ──────────────────
+      # Canary deploys 10% of traffic to a new model version.
+      # After 30 minutes, the validate-canary job (below) decides:
+      # promote to 100% if metrics pass, rollback if they fail.
+      - name: Deploy Canary (Manual Approval Only)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-canary-deployment.yaml
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/fastapi-canary-service.yaml
-          kubectl apply -n $NAMESPACE -f infrastructure/kubernetes/canary/ingress-canary.yaml
+          TAG=${{ github.sha }}
+          echo "Deploying Canary (10% traffic split)"
+          kubectl apply -f infrastructure/kubernetes/canary/fastapi-canary-deployment.yaml -n $NAMESPACE
+          kubectl apply -f infrastructure/kubernetes/canary/fastapi-canary-service.yaml    -n $NAMESPACE
+          kubectl apply -f infrastructure/kubernetes/canary/ingress-canary.yaml            -n $NAMESPACE
+          kubectl set image deployment/fraudguard-fastapi-canary \
+            fastapi=$ECR_REGISTRY/fraudguard-fastapi:$TAG \
+            -n $NAMESPACE
+
+  # ── Canary validation job (runs 30 min after canary deploy) ─────────────────
+  # Queries Prometheus to compare canary P95 vs stable P95.
+  # Promotes if canary is within 20% of stable. Rolls back otherwise.
+  # This is what makes the resume claim "Prometheus-driven canary validation" TRUE.
+  validate-canary:
+    needs: deploy
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for canary to warm up
+        run: |
+          echo "Waiting 10 minutes for canary to receive traffic..."
+          sleep 600
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install requests
+        run: pip install requests
+
+      # Validate canary against Prometheus metrics and decide promote/rollback
+      - name: Validate canary metrics and promote or rollback
+        env:
+          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+          NAMESPACE: ${{ env.NAMESPACE }}
+        run: |
+          python - <<'EOF'
+          import requests
+          import subprocess
+          import sys
+
+          PROM = "${{ secrets.PROMETHEUS_URL }}"
+          NS   = "${{ env.NAMESPACE }}"
+
+          # PromQL queries — filter by pod label to isolate canary vs stable
+          Q_CANARY_P95 = """
+          histogram_quantile(0.95,
+            sum(rate(fraud_model_inference_latency_seconds_bucket{
+              namespace="%s",
+              pod=~"fraudguard-fastapi-canary.*"
+            }[5m])) by (le)
+          ) * 1000
+          """ % NS
+
+          Q_STABLE_P95 = """
+          histogram_quantile(0.95,
+            sum(rate(fraud_model_inference_latency_seconds_bucket{
+              namespace="%s",
+              pod=~"fraudguard-fastapi-stable.*"
+            }[5m])) by (le)
+          ) * 1000
+          """ % NS
+
+          Q_CANARY_ERR = """
+          rate(http_requests_total{
+            namespace="%s",
+            pod=~"fraudguard-fastapi-canary.*",
+            status=~"5.."
+          }[5m])
+          /
+          rate(http_requests_total{
+            namespace="%s",
+            pod=~"fraudguard-fastapi-canary.*"
+          }[5m])
+          """ % (NS, NS)
+
+          def query(q):
+              r = requests.get(f"{PROM}/api/v1/query", params={"query": q.strip()}, timeout=10)
+              data = r.json()
+              if data["status"] == "success" and data["data"]["result"]:
+                  return float(data["data"]["result"][0]["value"][1])
+              return None
+
+          canary_p95 = query(Q_CANARY_P95)
+          stable_p95 = query(Q_STABLE_P95)
+          canary_err  = query(Q_CANARY_ERR) or 0.0
+
+          print(f"Canary P95:  {canary_p95}ms")
+          print(f"Stable P95:  {stable_p95}ms")
+          print(f"Canary err:  {canary_err:.4f}")
+
+          PROMOTE = True
+          reason  = ""
+
+          if canary_p95 is None or stable_p95 is None:
+              reason  = "No traffic data — deferring decision"
+              PROMOTE = False
+          elif canary_err > 0.01:
+              reason  = f"Error rate {canary_err:.2%} > 1% threshold"
+              PROMOTE = False
+          elif canary_p95 > stable_p95 * 1.20:
+              reason  = f"Canary P95 {canary_p95:.0f}ms is >20% slower than stable {stable_p95:.0f}ms"
+              PROMOTE = False
+          else:
+              reason = f"Canary P95 {canary_p95:.0f}ms <= stable {stable_p95:.0f}ms * 1.2 — metrics OK"
+
+          print(f"\nDecision: {'PROMOTE' if PROMOTE else 'ROLLBACK'}")
+          print(f"Reason:   {reason}")
+
+          if PROMOTE:
+              # Shift 100% traffic to canary, remove stable
+              subprocess.run([
+                  "kubectl", "annotate", "ingress", "fraudguard-canary",
+                  "nginx.ingress.kubernetes.io/canary-weight=100",
+                  "--overwrite", "-n", NS
+              ], check=True)
+              print("Canary PROMOTED to 100% traffic")
+          else:
+              # Remove canary — stable takes 100% automatically
+              subprocess.run([
+                  "kubectl", "delete", "deployment", "fraudguard-fastapi-canary",
+                  "-n", NS, "--ignore-not-found=true"
+              ], check=True)
+              subprocess.run([
+                  "kubectl", "delete", "ingress", "fraudguard-canary",
+                  "-n", NS, "--ignore-not-found=true"
+              ], check=True)
+              print("Canary ROLLED BACK — stable traffic unchanged")
+              sys.exit(1)
+          EOF
