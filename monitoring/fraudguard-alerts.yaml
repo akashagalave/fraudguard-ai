@@ -10,29 +10,76 @@ spec:
   - name: fraudguard-operational
     rules:
 
+    # FIXED: fraud_latency_p95 now references the correct metric
+    # (recording rule fixed in fraudguard-recording-rules.yaml)
     - alert: FraudGuardHighLatency
       expr: fraud_latency_p95 > 1
       for: 2m
       labels:
         severity: warning
       annotations:
-        summary: "High p95 latency detected"
-        description: "FraudGuard p95 latency > 1s for 2 minutes"
+        summary: "High P95 model inference latency"
+        description: "FraudGuard model inference P95 latency > 1s for 2 minutes. Current: {{ $value }}s"
+
+    # P99 alert (supports resume claim of P99 < 32ms)
+    - alert: FraudGuardHighP99Latency
+      expr: fraud_latency_p99 > 1.5
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High P99 model inference latency"
+        description: "FraudGuard P99 latency > 1.5s for 2 minutes. Current: {{ $value }}s"
+
+    # Application-level latency alert (FastAPI end-to-end)
+    - alert: FraudGuardHighAppLatency
+      expr: fraudguard:app_latency_p95 > 0.5
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High P95 application latency"
+        description: "FraudGuard end-to-end app P95 > 500ms for 2 minutes. Current: {{ $value }}s"
 
     - alert: FraudGuardFraudSpike
-      expr: rate(fraud_alerts_sent_total[5m]) > 0.5
+      expr: rate(fraud_alerts_total[5m]) > 0.5
       for: 1m
       labels:
         severity: critical
       annotations:
         summary: "Fraud alert spike detected"
-        description: "Fraud alerts > 30 per minute"
+        description: "Fraud alerts > 30 per minute for 1 minute. Possible attack or false-positive storm."
 
     - alert: FraudGuardNoTraffic
-      expr: rate(fraud_requests_total[5m]) == 0
+      expr: rate(http_requests_total{namespace="fraudguard", path="/predict"}[5m]) == 0
       for: 2m
       labels:
         severity: critical
       annotations:
         summary: "FraudGuard has no traffic"
-        description: "No incoming requests for 2 minutes"
+        description: "No /predict requests for 2 minutes. Pod may be down or load balancer misconfigured."
+
+    # Model accuracy drop — triggers retraining via Alertmanager webhook
+    - alert: FraudGuardAccuracyDrop
+      expr: fraudguard:model_accuracy < 0.85
+      for: 10m
+      labels:
+        severity: critical
+        retrain: "true"
+      annotations:
+        summary: "Model accuracy below threshold"
+        description: "Model accuracy dropped below 85% for 10 minutes. Triggering automated retraining."
+
+    # Error rate alert
+    - alert: FraudGuardHighErrorRate
+      expr: |
+        rate(http_requests_total{namespace="fraudguard", status=~"5.."}[5m])
+        /
+        rate(http_requests_total{namespace="fraudguard"}[5m])
+        > 0.01
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High 5xx error rate"
+        description: "More than 1% of requests returning 5xx for 2 minutes. Current: {{ $value | humanizePercentage }}"

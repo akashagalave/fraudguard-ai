@@ -141,24 +141,19 @@ async def metrics_middleware(request: Request, call_next):
 
 
 def _build_feature_df(features: dict) -> pd.DataFrame:
-
     df = pd.DataFrame([features])
-
-
     df.columns = (
         df.columns
         .str.replace(r"[^A-Za-z0-9_]", "_", regex=True)
         .str.replace(r"_+", "_", regex=True)
         .str.strip("_")
     )
-
     df, _ = build_features(df, mode="test", artifacts=_feature_artifacts)
 
    
     missing = set(_feature_columns) - set(df.columns)
     for col in missing:
         df[col] = 0
-
     df = df[_feature_columns]
 
   
@@ -261,10 +256,7 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
 
 @app.post("/predict/explain", response_model=PredictionResponse)
 async def predict_with_explain(request: PredictionRequest):
-    """
-    Fraud inference with SHAP explanations.
-    Slower than /predict — use for investigation/audit, not real-time path.
-    """
+
     import shap as shap_lib
     import numpy as np
 

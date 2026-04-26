@@ -46,16 +46,7 @@ SKIP_COLS = {"is_fraud", "trans_date_trans_time", "dob", "ts", "unix_time", "Unn
 
 
 def calculate_psi(expected: pd.Series, actual: pd.Series, bins: int = BINS) -> float:
-    """
-    PSI between two distributions using percentile-based breakpoints.
 
-    Percentile-based bins use kiye hain (fixed bins nahi) kyunki:
-    - Fixed bins dono datasets pe alag alag ranges cover karte hain
-    - Percentile bins reference distribution ke structure pe based hain
-    - Comparison accurate hota hai
-
-    Purana scripts/drift_detector.py mein fixed bins the — galat approach tha.
-    """
     expected = expected.dropna()
     actual   = actual.dropna()
 
@@ -84,10 +75,7 @@ def calculate_psi(expected: pd.Series, actual: pd.Series, bins: int = BINS) -> f
 
 
 def calculate_categorical_psi(expected: pd.Series, actual: pd.Series) -> float:
-    """
-    PSI for categorical / low-cardinality features.
-    Value frequency use karta hai histogram bins ki jagah.
-    """
+
     all_cats = set(expected.dropna().unique()) | set(actual.dropna().unique())
 
     ref_pct = expected.value_counts(normalize=True)
@@ -141,7 +129,6 @@ def main():
 
         drift_scores[col] = round(psi_val, 6)
 
-    # ── Categorise results ────────────────────────────────────────────────────
     drifted_cols  = {k: v for k, v in drift_scores.items() if v > DRIFT_THRESHOLD}
     moderate_cols = {k: v for k, v in drift_scores.items() if MODERATE_THRESHOLD < v <= DRIFT_THRESHOLD}
     stable_cols   = {k: v for k, v in drift_scores.items() if v <= MODERATE_THRESHOLD}

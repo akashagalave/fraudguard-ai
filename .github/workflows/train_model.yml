@@ -13,7 +13,7 @@ on:
         default: "none"
 
   schedule:
-    - cron: "0 2 * * 0"   # Har Sunday 2am UTC
+    - cron: "0 2 * * 0"    
 
 jobs:
   train:
@@ -28,8 +28,10 @@ jobs:
       COOLDOWN_HOURS: 24
       COOLDOWN_S3_PATH: s3://fraudguard-raw-data/meta/last_retrain.txt
 
-    steps:
+    outputs:
+      model_ready: ${{ steps.set-output.outputs.model_ready }}
 
+    steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -57,10 +59,41 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Restore retrain cooldown cache
+        uses: actions/cache@v4
+        with:
+          path: .retrain-cache
+          key: retrain-${{ github.repository }}
 
-      - name: Fetch external data
+      - name: Detect data drift
+        id: drift
         run: |
-          aws s3 cp s3://fraudguard-raw-data/data/external/ data/external/ --recursive
+          python scripts/drift_detector.py || true
+
+          if [ -f retrain.flag ]; then
+            echo "DRIFT=true" >> $GITHUB_ENV
+          else
+            echo "DRIFT=false" >> $GITHUB_ENV
+          fi
+
+      - name: Cooldown check
+        run: |
+          mkdir -p .retrain-cache
+          LAST_RUN_FILE=.retrain-cache/last_run
+
+          NOW=$(date +%s)
+
+          if [ -f "$LAST_RUN_FILE" ]; then
+            LAST=$(cat $LAST_RUN_FILE)
+            DIFF=$(( (NOW - LAST) / 3600 ))
+
+            if [ "$DIFF" -lt "$COOLDOWN_HOURS" ] && [ "$DRIFT" != "true" ] && [ "${{ github.event_name }}" != "schedule" ]; then
+              echo "Cooldown active — skipping retrain"
+              exit 0
+            fi
+          fi
+
+          echo $NOW > $LAST_RUN_FILE
 
       - name: DVC Pull
         run: dvc pull
