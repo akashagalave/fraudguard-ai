@@ -1,0 +1,100 @@
+name: FraudGuard Deploy Workers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"          
+      - "src/features/**"      
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 199964507152.dkr.ecr.us-east-1.amazonaws.com
+  CLUSTER_NAME: fraudguard-eks
+  NAMESPACE: fraudguard
+
+jobs:
+
+ 
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      shap_worker: ${{ steps.filter.outputs.shap_worker }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shap_worker:
+              - 'services/shap-worker/**'
+              - 'src/features/**'
+
+  deploy:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service:
+          - name: shap-worker
+            dockerfile: services/shap-worker/Dockerfile
+            ecr_repo: fraudguard-shap-worker
+            deployment: fraudguard-shap-worker
+            changed: ${{ needs.detect-changes.outputs.shap_worker }}
+
+    steps:
+
+      - name: Skip if not changed
+        if: matrix.service.changed != 'true' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "No changes in ${{ matrix.service.name }} — skipping"
+
+      - uses: actions/checkout@v4
+        if: matrix.service.changed == 'true' || github.event_name == 'workflow_dispatch'
+
+      - name: Configure AWS credentials
+        if: matrix.service.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: matrix.service.changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      
+      - name: Build and push image
+        if: matrix.service.changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          docker build \
+            -f ${{ matrix.service.dockerfile }} \
+            -t $ECR_REGISTRY/${{ matrix.service.ecr_repo }}:${{ github.sha }} \
+            -t $ECR_REGISTRY/${{ matrix.service.ecr_repo }}:latest \
+            .
+          docker push $ECR_REGISTRY/${{ matrix.service.ecr_repo }}:${{ github.sha }}
+          docker push $ECR_REGISTRY/${{ matrix.service.ecr_repo }}:latest
+
+      - name: Deploy to Kubernetes
+        if: matrix.service.changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $CLUSTER_NAME
+
+          kubectl apply -f infrastructure/kubernetes/shap-worker/deployment.yaml
+
+          kubectl rollout restart deployment/${{ matrix.service.deployment }} \
+            -n $NAMESPACE || true
+
+          kubectl rollout status deployment/${{ matrix.service.deployment }} \
+            -n $NAMESPACE --timeout=180s || true
+
+          echo "${{ matrix.service.name }} deployed successfully"

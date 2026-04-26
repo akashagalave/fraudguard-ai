@@ -9,7 +9,7 @@ spec:
     kind: Deployment
     name: fraudguard-fastapi
 
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 10
 
   metrics:

@@ -1,24 +1,27 @@
-name: FraudGuard Full CI-CD Pipeline
+name: FraudGuard CI-CD Pipeline
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-
-  workflow_dispatch:
-
+  # Model training complete  → automatically trigger
   workflow_run:
     workflows: ["FraudGuard Model Training"]
     types:
       - completed
+
+
+  push:
+    branches: [main]
+    paths:
+      - "serving/**"
+      - "src/**"
+
+  
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 199964507152.dkr.ecr.us-east-1.amazonaws.com
   CLUSTER_NAME: fraudguard-eks
   NAMESPACE: fraudguard
-
 
   MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
   MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
@@ -31,22 +34,22 @@ jobs:
 
     steps:
 
+  
       - name: Checkout repository
         uses: actions/checkout@v4
 
- 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r dev-requirements.txt
+          pip install -r requirements.txt
           pip install -e .
           pip install mlflow dagshub dvc[s3]
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -54,46 +57,39 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-
+   
       - name: DVC Pull Artifacts
         run: dvc pull
 
+      # Model quality gate
+      # ROC-AUC < 0.9 ya PR-AUC < 0.9 → pipeline fail → no deploy
       - name: Validate Model Quality
         run: python scripts/model_quality_check.py
+
 
       - name: Promote Model to Production
         run: python scripts/promote_model.py
 
-
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Build & Push FastAPI only ───────────────────────────────────────
 
       - name: Build & Push FastAPI
         run: |
-          docker build -t fraudguard-fastapi -f serving/Dockerfile .
-          docker tag fraudguard-fastapi $ECR_REGISTRY/fraudguard-fastapi:latest
+          docker build \
+            -f serving/Dockerfile \
+            -t $ECR_REGISTRY/fraudguard-fastapi:${{ github.sha }} \
+            -t $ECR_REGISTRY/fraudguard-fastapi:latest \
+            .
+          docker push $ECR_REGISTRY/fraudguard-fastapi:${{ github.sha }}
           docker push $ECR_REGISTRY/fraudguard-fastapi:latest
-
-      - name: Build & Push Kafka Producer
-        run: |
-          docker build -t fraudguard-producer -f services/producer/Dockerfile .
-          docker tag fraudguard-producer $ECR_REGISTRY/fraudguard-producer:latest
-          docker push $ECR_REGISTRY/fraudguard-producer:latest
-
-      - name: Build & Push Kafka Consumer
-        run: |
-          docker build -t fraudguard-consumer -f services/consumer/Dockerfile .
-          docker tag fraudguard-consumer $ECR_REGISTRY/fraudguard-consumer:latest
-          docker push $ECR_REGISTRY/fraudguard-consumer:latest
-
 
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --region $AWS_REGION \
             --name $CLUSTER_NAME
-
 
       - name: Deploy Redis
         run: kubectl apply -f infrastructure/kubernetes/redis/redis.yaml
@@ -105,29 +101,35 @@ jobs:
           kubectl apply -f infrastructure/kubernetes/kafka/kafka-topic.yaml
           kubectl apply -f infrastructure/kubernetes/kafka/kafka-topic-alerts.yaml
 
-
-      - name: Deploy Stable FastAPI
+      - name: Deploy FastAPI
         run: |
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-stable-deployment.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-stable-service.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/ingress-stable.yaml
+          kubectl apply -f infrastructure/kubernetes/fastapi/deployment.yaml
+          kubectl apply -f infrastructure/kubernetes/fastapi/service.yaml
+          kubectl apply -f infrastructure/kubernetes/ingress/fraudguard-ingress.yaml
+          kubectl rollout status deployment/fraudguard-fastapi \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Apply HPA
+        run: kubectl apply -f infrastructure/kubernetes/hpa/fraudguard-hpa.yaml
 
 
-      - name: Deploy Workers
+      - name: Apply Monitoring
         run: |
-          kubectl apply -f services/alert-worker/deployment.yaml
-          kubectl apply -f services/alert-worker/service.yaml
-          kubectl apply -f services/shap-worker/deployment.yaml
+          kubectl apply -f infrastructure/kubernetes/monitoring/fraudguard-fastapi-servicemonitor.yaml
+          kubectl apply -f infrastructure/kubernetes/monitoring/fraudguard-accuracy-alert.yaml
 
-      - name: Apply ServiceMonitors
+  
+      - name: Apply Prometheus Adapter
         run: |
-          kubectl apply -f infrastructure/kubernetes/monitoring/alert-worker-servicemonitor.yaml
-          kubectl apply -f infrastructure/kubernetes/monitoring/servicemonitor.yaml
+          helm upgrade --install prometheus-adapter \
+            prometheus-community/prometheus-adapter \
+            --namespace monitoring \
+            -f infrastructure/kubernetes/prometheus-adapter/adapter-values.yaml \
+            --wait
 
-      - name: Canary Deployment (Manual Approval)
-        if: github.event_name == 'workflow_dispatch'
+
+      - name: Verify deployments
         run: |
-          echo " Deploying Canary (A/B testing 10% traffic)"
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-canary-deployment.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/fastapi-canary-service.yaml
-          kubectl apply -f infrastructure/kubernetes/canary/ingress-canary.yaml
+          kubectl rollout status deployment/fraudguard-fastapi -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/redis              -n $NAMESPACE --timeout=60s
+          echo "All deployments healthy"

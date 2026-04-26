@@ -8,5 +8,6 @@ spec:
   selector:
     app: fraudguard-fastapi
   ports:
-    - port: 80
-      targetPort: 8000
+  - name: http        
+    port: 80
+    targetPort: 8000

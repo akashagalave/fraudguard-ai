@@ -13,7 +13,7 @@ on:
         default: "none"
 
   schedule:
-    - cron: "0 2 * * 0"  
+    - cron: "0 2 * * 0"   # Har Sunday 2am UTC
 
 jobs:
   train:
@@ -25,25 +25,23 @@ jobs:
       MLFLOW_TRACKING_URI: https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow
       MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_TOKEN }}
       MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-
-   
       COOLDOWN_HOURS: 24
+      COOLDOWN_S3_PATH: s3://fraudguard-raw-data/meta/last_retrain.txt
 
     steps:
 
       - uses: actions/checkout@v4
 
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-
       - name: Log retrain context
         run: |
-          echo " Retraining trigger reason: ${{ github.event.inputs.reason }}"
-          echo " Alert: ${{ github.event.inputs.alert }}"
-          echo " Event type: ${{ github.event_name }}"
+          echo "Retraining trigger reason : ${{ github.event.inputs.reason }}"
+          echo "Alert                     : ${{ github.event.inputs.alert }}"
+          echo "Event type                : ${{ github.event_name }}"
+
 
       - name: Install dependencies
         run: |
@@ -51,7 +49,6 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
           pip install dvc[s3] mlflow dagshub
-
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -68,18 +65,20 @@ jobs:
       - name: DVC Pull
         run: dvc pull
 
-
+      # ── 7. Drift detection ─────────────────────────────────────────────────
+      # Drift mili → retrain.flag 
+      # No drift + not scheduled → skip
       - name: Detect data drift
         run: |
           python scripts/drift_detector.py
 
           if [ -f retrain.flag ]; then
-            echo " Drift detected — retraining allowed"
+            echo "Drift detected — retraining allowed"
           else
             if [ "${{ github.event_name }}" = "schedule" ]; then
-              echo " Scheduled retrain — proceeding anyway"
+              echo "Scheduled retrain — proceeding anyway"
             else
-              echo " No drift & not scheduled — skipping retrain"
+              echo "No drift and not scheduled — skipping retrain"
               exit 0
             fi
           fi
@@ -87,27 +86,44 @@ jobs:
 
       - name: Retrain cooldown check
         run: |
-          LAST_RUN_FILE=".last_retrain"
-
-          if [ -f "$LAST_RUN_FILE" ]; then
-            LAST_RUN=$(cat $LAST_RUN_FILE)
+          if aws s3 cp $COOLDOWN_S3_PATH /tmp/last_retrain 2>/dev/null; then
+            LAST_RUN=$(cat /tmp/last_retrain)
             NOW=$(date +%s)
             DIFF_HOURS=$(( (NOW - LAST_RUN) / 3600 ))
 
             if [ "$DIFF_HOURS" -lt "$COOLDOWN_HOURS" ]; then
-              echo " Cooldown active ($DIFF_HOURS h < $COOLDOWN_HOURS h). Exiting."
+              echo "Cooldown active — ${DIFF_HOURS}h < ${COOLDOWN_HOURS}h — skipping"
               exit 0
             fi
+
+            echo "Cooldown passed — ${DIFF_HOURS}h since last retrain"
+          else
+            echo "No previous retrain record found — proceeding"
           fi
 
-          date +%s > $LAST_RUN_FILE
-
+          # Update timestamp in S3
+          date +%s | aws s3 cp - $COOLDOWN_S3_PATH
+          echo "Cooldown timestamp updated in S3"
 
       - name: Retrain model
         run: |
-          echo "Starting model retraining"
+          echo "Starting model retraining via DVC pipeline"
           dvc repro
 
 
-      - name: Push artifacts
+      - name: Evaluate model
+        run: python src/model/model_evaluation.py
+
+      - name: Register model to MLflow Staging
+        run: python src/model/model_registry.py
+
+      - name: Push artifacts to DVC remote
         run: dvc push
+
+      # ── 12. Trigger CI-CD ──────────────────────────────────────────────────
+      # Train complete → cicd.yaml automatically trigger 
+      # workflow_run trigger — quality check → promote → deploy
+      - name: Done
+        run: |
+          echo "Model training complete"
+          echo "cicd.yaml will now run model_quality_check → promote → deploy"
