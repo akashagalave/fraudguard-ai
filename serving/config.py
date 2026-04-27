@@ -13,7 +13,7 @@ except ValueError:
 REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 3600))
 
 
-
+KAFKA_ENABLED = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
 
 MLFLOW_TRACKING_URI = "https://dagshub.com/akashagalaveaaa1/fraudguard-ai.mlflow"
 
@@ -22,7 +22,7 @@ CATEGORICAL_COLS_PATH = "models/fraudguard_lightgbm/categorical_cols.json"
 
 MODEL_NAME = "fraudguard_lightgbm"
 MODEL_STAGE = "Production"
-
+MODEL_VERSION = os.getenv("MODEL_VERSION", "fraudguard_v1")
 
 FRAUD_THRESHOLD = 0.3
 

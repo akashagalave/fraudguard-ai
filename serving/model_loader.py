@@ -12,7 +12,7 @@ logger = logging.getLogger("model_loader")
 logger.setLevel(logging.INFO)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-MODEL_DIR = BASE_DIR / "models" / "fraudguard_lightgbm"
+MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "fraudguard_lightgbm"
 
 _model = None
 _feature_columns = None

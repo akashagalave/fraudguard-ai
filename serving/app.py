@@ -3,6 +3,7 @@ import time
 import json
 import logging
 import random
+from flask import request
 import joblib
 import pandas as pd
 from pathlib import Path
@@ -10,13 +11,16 @@ from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from starlette.responses import Response
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-
+from fastapi.concurrency import run_in_threadpool
 from .model_loader import load_model_assets
 from .schemas import PredictionRequest, PredictionResponse, ShapReason
-from .config import MODEL_VERSION, FRAUD_THRESHOLD, REDIS_TTL_SECONDS
+from .config import KAFKA_ENABLED, MODEL_VERSION, FRAUD_THRESHOLD, REDIS_TTL_SECONDS
 from .redis_client import init_redis, get_from_cache, set_to_cache
 from .kafka_producer import init_kafka_producer, send_fraud_event, build_fraud_event
 from src.features.feature_engineering import build_features
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(title="FraudGuard API")
 logging.basicConfig(level=logging.INFO)
@@ -102,13 +106,23 @@ async def startup():
         _feature_artifacts = None
 
    
-    threshold_path = Path("models/fraudguard_lightgbm/threshold.json")
+    threshold_path = BASE_DIR / "models" / "fraudguard_lightgbm" / "threshold.json"
+
+    _threshold = FRAUD_THRESHOLD 
+
     if threshold_path.exists():
-        saved = json.load(open(threshold_path))
-        _threshold = float(saved.get("threshold", FRAUD_THRESHOLD))
-        logger.info(f"Optimal threshold loaded: {_threshold:.4f}")
+        try:
+            with open(threshold_path) as f:
+                saved = json.load(f)
+
+            _threshold = float(saved.get("threshold", FRAUD_THRESHOLD))
+            logger.info(f"Optimal threshold loaded: {_threshold:.4f}")
+
+        except Exception as e:
+            logger.warning(f"Failed to load threshold file: {e}, using default {_threshold}")
+
     else:
-        logger.info(f"Using config threshold: {_threshold}")
+        logger.info(f"Threshold file not found, using config threshold: {_threshold}")
 
    
     await init_redis()
@@ -165,6 +179,7 @@ def _build_feature_df(features: dict) -> pd.DataFrame:
 
 def _emit_kafka_event(
     transaction_id: str,
+    user_email: str,
     features: dict,
     fraud_probability: float,
     risk_score: int,
@@ -175,12 +190,15 @@ def _emit_kafka_event(
             transaction_id=transaction_id,
             fraud_probability=fraud_probability,
             risk_score=risk_score,
+            user_email=user_email,
             model_version=MODEL_VERSION,
             features=features,
         )
         send_fraud_event(event)
     except Exception as e:
         logger.error(f"Kafka emit failed for txn {transaction_id}: {e}")
+
+
 
 
 @app.post("/predict", response_model=PredictionResponse)
@@ -207,7 +225,9 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
         )
 
     with model_inference_latency.labels(version=MODEL_VERSION).time():
-        fraud_probability = float(_model.predict_proba(feature_df)[0][1])
+        fraud_probability = await run_in_threadpool(
+            lambda: float(_model.predict_proba(feature_df)[0][1])
+            )
 
     is_fraud = fraud_probability >= _threshold
     risk_score = int(fraud_probability * 100)
@@ -242,17 +262,17 @@ async def predict(request: PredictionRequest, background_tasks: BackgroundTasks)
 
     await set_to_cache(cache_key, result.model_dump(), ttl=REDIS_TTL_SECONDS)
 
-    if is_fraud:
+    if is_fraud and KAFKA_ENABLED:
         background_tasks.add_task(
             _emit_kafka_event,
             transaction_id,
+            request.user_email,
             features_dict,
             fraud_probability,
             risk_score,
         )
 
     return result
-
 
 @app.post("/predict/explain", response_model=PredictionResponse)
 async def predict_with_explain(request: PredictionRequest):
@@ -269,7 +289,9 @@ async def predict_with_explain(request: PredictionRequest):
         raise HTTPException(status_code=422, detail=f"Feature extraction failed: {str(e)}")
 
     with model_inference_latency.labels(version=MODEL_VERSION).time():
-        fraud_probability = float(_model.predict_proba(feature_df)[0][1])
+        fraud_probability = await run_in_threadpool(
+            lambda: float(_model.predict_proba(feature_df)[0][1])
+            )
 
     is_fraud = fraud_probability >= _threshold
 

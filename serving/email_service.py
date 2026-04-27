@@ -18,6 +18,7 @@ logger = logging.getLogger("email")
 
 
 def send_fraud_email(
+    to_email: str,
     transaction_id: str,
     features: dict,
     fraud_probability: float,
@@ -39,7 +40,7 @@ def send_fraud_email(
         msg = MIMEMultipart("related")
         msg["Subject"] = " Suspicious Transaction Alert"
         msg["From"] = SMTP_USER
-        msg["To"] = ALERT_RECEIVER_EMAIL
+        msg["To"] = to_email
 
 
         human_html = "".join(

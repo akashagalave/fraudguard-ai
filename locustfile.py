@@ -1,9 +1,11 @@
-
 import random
 import time
 import uuid
 from locust import HttpUser, task, between
 
+# -----------------------------
+# CONSTANTS
+# -----------------------------
 MERCHANTS = [
     "fraud_Kerluke-Abshire",
     "amazon_store",
@@ -22,9 +24,18 @@ CATEGORIES = [
 
 JOBS = ["Engineer", "Doctor", "Teacher", "Unemployed", "Student"]
 
+
+# -----------------------------
+# PAYLOAD GENERATORS
+# -----------------------------
+def random_email():
+    return f"test_{uuid.uuid4().hex[:6]}@gmail.com"
+
+
 def normal_payload():
     return {
         "transaction_id": f"txn_{uuid.uuid4().hex[:12]}",
+        "user_email": random_email(),  # ✅ REQUIRED
         "features": {
             "trans_date_trans_time": "2024-06-15 14:30:00",
             "cc_num": f"4{random.randint(100000000000000, 999999999999999)}",
@@ -43,9 +54,11 @@ def normal_payload():
         }
     }
 
+
 def fraud_payload():
     return {
         "transaction_id": f"txn_fraud_{uuid.uuid4().hex[:12]}",
+        "user_email": random_email(),  # ✅ REQUIRED
         "features": {
             "trans_date_trans_time": "2024-06-15 02:30:00",
             "cc_num": f"4{random.randint(100000000000000, 999999999999999)}",
@@ -65,23 +78,67 @@ def fraud_payload():
     }
 
 
+# -----------------------------
+# USER CLASS
+# -----------------------------
 class FraudGuardUser(HttpUser):
-    wait_time = between(0, 0)
+    wait_time = between(0.5, 1.5)  # ✅ realistic load
 
-    @task(9)
+    @task(8)
     def predict_normal(self):
-        self.client.post(
-            "/predict",
-            json=normal_payload(),
-            name="/predict [normal]"
-        )
+        payload = normal_payload()
 
-    @task(1)
+        with self.client.post(
+            "/predict",
+            json=payload,
+            name="/predict [normal]",
+            catch_response=True
+        ) as response:
+
+            if response.status_code != 200:
+                response.failure(f"HTTP {response.status_code}")
+                return
+
+            try:
+                data = response.json()
+
+                # ✅ Validate response
+                if "fraud_probability" not in data:
+                    response.failure("Missing fraud_probability")
+
+                elif not isinstance(data["fraud_probability"], float):
+                    response.failure("Invalid fraud_probability type")
+
+                else:
+                    response.success()
+
+            except Exception as e:
+                response.failure(f"JSON parse error: {e}")
+
+
+    @task(2)
     def predict_fraud(self):
-        self.client.post(
+        payload = fraud_payload()
+
+        with self.client.post(
             "/predict",
-            json=fraud_payload(),
-            name="/predict [fraud]"
-        )
+            json=payload,
+            name="/predict [fraud]",
+            catch_response=True
+        ) as response:
 
+            if response.status_code != 200:
+                response.failure(f"HTTP {response.status_code}")
+                return
 
+            try:
+                data = response.json()
+
+                if not data.get("is_fraud", False):
+                    response.failure("Expected fraud but got normal")
+
+                else:
+                    response.success()
+
+            except Exception as e:
+                response.failure(f"JSON parse error: {e}")

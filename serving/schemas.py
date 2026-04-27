@@ -1,10 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,EmailStr
 from typing import Dict, Any, List, Optional
 
 
 
 class PredictionRequest(BaseModel):
     transaction_id: str
+    user_email: EmailStr
     features: Dict[str, Any]
 
 
