@@ -13,10 +13,9 @@ spec:
   maxReplicas: 10
 
   metrics:
-    - type: External
-      external:
-        metric:
-          name: fraud_latency_p95
+    - type: Resource
+      resource:
+        name: cpu
         target:
-          type: Value
-          value: "200m"   
+          type: Utilization
+          averageUtilization: 70
