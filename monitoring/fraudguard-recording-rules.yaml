@@ -9,8 +9,6 @@ spec:
   groups:
     - name: fraudguard-latency
       rules:
-        # FIXED: correct metric name is fraud_model_inference_latency_seconds
-        # (was wrongly referencing fraud_inference_latency_seconds_bucket which doesn't exist)
         - record: fraud_latency_p95
           expr: |
             histogram_quantile(
@@ -21,8 +19,6 @@ spec:
                 )
               )
             )
-
-        # Added P99 recording rule (needed for resume claim "P99 < 32ms")
         - record: fraud_latency_p99
           expr: |
             histogram_quantile(
@@ -34,7 +30,7 @@ spec:
               )
             )
 
-        # End-to-end application latency P95 (FastAPI middleware metric)
+
         - record: fraudguard:app_latency_p95
           expr: |
             histogram_quantile(
@@ -49,7 +45,7 @@ spec:
               )
             )
 
-        # End-to-end application latency P99
+
         - record: fraudguard:app_latency_p99
           expr: |
             histogram_quantile(
@@ -66,23 +62,14 @@ spec:
 
     - name: fraudguard-model-metrics
       rules:
-        # Model accuracy proxy: fraud correct predictions / total predictions
-        # Note: requires fraud_correct_predictions_total counter to be emitted by app.py
-        # Currently approximated via prediction distribution monitoring
-        - record: fraudguard:model_accuracy
-          expr: |
-            sum(rate(fraud_correct_predictions_total[5m]))
-            /
-            sum(rate(fraud_predictions_total[5m]))
 
-        # Fraud detection rate: what % of predictions are fraud
         - record: fraudguard:fraud_rate
           expr: |
             sum(rate(fraud_positive_predictions_total[5m]))
             /
             (sum(rate(fraud_predictions_total[5m])) + 1e-10)
 
-        # Request rate per second
+
         - record: fraudguard:request_rate
           expr: |
             sum(rate(http_requests_total{namespace="fraudguard", path="/predict"}[1m]))
