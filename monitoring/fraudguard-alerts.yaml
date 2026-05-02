@@ -41,15 +41,16 @@ spec:
         summary: "High P95 application latency"
         description: "FraudGuard end-to-end app P95 > 500ms for 2 minutes. Current: {{ $value }}s"
 
-    - alert: FraudGuardFraudSpike
-      expr: rate(fraud_alerts_total[5m]) > 0.5
-      for: 1m
+    - alert: FraudGuardFraudRateSpike
+      expr: fraudguard:fraud_rate > 0.3
+      for: 5m
       labels:
         severity: critical
+        retrain: "true"
       annotations:
-        summary: "Fraud alert spike detected"
-        description: "Fraud alerts > 30 per minute for 1 minute. Possible attack or false-positive storm."
-
+        summary: "Fraud rate spike detected"
+        description: "More than 30% of transactions flagged as fraud for 5 minutes. Possible model drift or attack."
+        
     - alert: FraudGuardNoTraffic
       expr: rate(http_requests_total{namespace="fraudguard", path="/predict"}[5m]) == 0
       for: 2m
@@ -58,17 +59,6 @@ spec:
       annotations:
         summary: "FraudGuard has no traffic"
         description: "No /predict requests for 2 minutes. Pod may be down or load balancer misconfigured."
-
-    # Model accuracy drop — triggers retraining via Alertmanager webhook
-    - alert: FraudGuardAccuracyDrop
-      expr: fraudguard:model_accuracy < 0.85
-      for: 10m
-      labels:
-        severity: critical
-        retrain: "true"
-      annotations:
-        summary: "Model accuracy below threshold"
-        description: "Model accuracy dropped below 85% for 10 minutes. Triggering automated retraining."
 
     # Error rate alert
     - alert: FraudGuardHighErrorRate
